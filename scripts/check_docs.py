@@ -6,7 +6,6 @@ references commands or resources that do not exist in the repository.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import sys
 
@@ -38,6 +37,7 @@ def main() -> int:
         "docs/architecture.md",
         "references/troubleshooting.md",
         "references/publication-readiness-api-sources.md",
+        "references/publication-readiness-suite.md",
         "prompts/00-extension-router.md",
         "prompts/08-sci-writing.md",
         "prompts/09-language-polish.md",
@@ -57,6 +57,8 @@ def main() -> int:
         "config/schema/submission-preflight.schema.json",
         "scripts/gates.py",
         "scripts/check_preservation.py",
+        "scripts/readiness/__init__.py",
+        "scripts/readiness/utils.py",
         "scripts/readiness/reference_verifier.py",
         "scripts/readiness/journal_fit.py",
         "scripts/readiness/claim_evidence.py",
@@ -75,9 +77,7 @@ def main() -> int:
             errors.append(f"missing required repository path: {rel}")
 
     text_files = ["SKILL.md", "README.md", "CONTRIBUTING.md", "CHANGELOG.md"]
-    known_bad = [
-        "scripts/ingest/parse_word.py",
-    ]
+    known_bad = ["scripts/ingest/parse_word.py"]
     for rel in text_files:
         p = ROOT / rel
         if not p.exists():
