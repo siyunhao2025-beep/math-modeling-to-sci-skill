@@ -3,14 +3,15 @@
 
 Semantic citation support, visual scientific judgment and Reviewer Simulator
 remain Agent tasks. This runner prepares their evidence artifacts and then
-executes preflight; preflight is expected to remain BLOCKED/AUTHOR_ACTION_REQUIRED
-until the Agent artifacts are completed.
+executes preflight; preflight remains BLOCKED/AUTHOR_ACTION_REQUIRED until the
+Agent artifacts and any conditional LaTeX/template evidence are complete.
 """
 from __future__ import annotations
 
 import argparse
 import os
 from pathlib import Path
+import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -70,6 +71,23 @@ def main() -> int:
     if args.with_similarity_precheck:
         similarity_precheck.run(args.manuscript, str(out / "similarity-precheck.json"), args.s2_api_key)
 
+    # LaTeX compilation is a hard conditional readiness gate. Reuse the existing
+    # real compile checker and preserve its machine-readable result for preflight.
+    build_tex = Path(args.build_tex) if args.build_tex else None
+    if build_tex and build_tex.is_file():
+        compile_checker = Path(__file__).resolve().parents[1] / "validate" / "latex_compile_check.py"
+        subprocess.run(
+            [
+                sys.executable,
+                str(compile_checker),
+                "--build",
+                str(build_tex.parent),
+                "--out",
+                str(out / "latex-compile.json"),
+            ],
+            check=False,
+        )
+
     result = submission_preflight.run(
         args.workdir,
         str(out / "submission-preflight.json"),
@@ -77,8 +95,9 @@ def main() -> int:
     )
     print(
         "Deterministic readiness pass complete. "
-        f"Preflight={result['status']}. Complete Agent citation-support, visual review "
-        "and Reviewer Simulator artifacts before final human-submission check."
+        f"Preflight={result['status']}. Complete Agent citation-support, semantic "
+        "journal-fit/claim review, visual review and Reviewer Simulator artifacts "
+        "before final human-submission check."
     )
     return 0 if result["status"] == "READY_FOR_HUMAN_SUBMISSION_CHECK" else 2
 
