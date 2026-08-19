@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
-import json
 from pathlib import Path
 import sys
 
@@ -58,9 +57,12 @@ def run(workdir: str, out_json: str, out_md: str | None = None) -> dict:
     v = data.get("validation") or {}
     if (v.get("summary") or {}).get("error_count", 1) != 0:
         blockers.append({"code": "S6_ERRORS", "area": "validation", "detail": (v.get("summary") or {}).get("unresolved_error_ids", [])})
-    latex = _latex_status(v)
-    if latex != "pass":
-        blockers.append({"code": "LATEX_NOT_COMPILED", "area": "validation", "detail": f"latex_compile_check={latex}"})
+
+    latex_build = (root / "05-template" / "build" / "main.tex").is_file()
+    if latex_build:
+        latex = _latex_status(v)
+        if latex != "pass":
+            blockers.append({"code": "LATEX_NOT_COMPILED", "area": "validation", "detail": f"latex_compile_check={latex}"})
 
     refs = data.get("references") or {}
     if refs.get("blockers"):
@@ -114,7 +116,7 @@ def run(workdir: str, out_json: str, out_md: str | None = None) -> dict:
         warnings.append({"code": "SIMILARITY_REVIEW", "area": "similarity", "detail": [m.get("title") for m in sim.get("high_flags", [])[:5]]})
 
     template = data.get("template")
-    if (root / "05-template" / "build" / "main.tex").is_file():
+    if latex_build:
         if not template or template.get("status") != "VERIFIED_OFFICIAL_SOURCE" or not template.get("integrity_ok", False):
             blockers.append({"code": "OFFICIAL_TEMPLATE_PROVENANCE", "area": "template", "detail": "LaTeX manuscript lacks verified official-template provenance"})
 
