@@ -15,11 +15,13 @@
   "approved_bugfix_paths": [
     "scripts/run_pipeline.py",
     "scripts/report.py",
+    "scripts/validate.py",
     "prompts/README.md"
   ],
   "approved_bugfix_reasons": {
     "scripts/run_pipeline.py": "Implement the quality gates already specified by v1.0.0; repair run modes, stage resume, --show-audit, --journal alias, and honest --no-ai-stub behavior.",
     "scripts/report.py": "Prevent demo/missing-validation runs from being mislabeled SUBMISSION_READY.",
+    "scripts/validate.py": "Align Finding output with validation.schema.json and correct PASS_WITH_WARNINGS verdict logic so G6 can evaluate real findings.",
     "prompts/README.md": "Synchronize the prompt inventory with the additive W/P/J extension and explicitly state its runtime boundary."
   },
   "required_paths_without_git_history": [
