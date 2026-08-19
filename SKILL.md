@@ -189,3 +189,133 @@ python scripts/report/build_report.py --workdir runs/demo --out 07-report/conver
 - `references/journal-database.md` — 期刊库字段说明与扩充方法
 - `references/troubleshooting.md` — 常见故障与恢复手册
 - `docs/architecture.md` — 数据流、状态机、质量门控完整说明
+
+
+<!-- ====================================================================== -->
+<!-- ADDITIVE SCI EXTENSION — appended 2026-08-19; legacy prefix is immutable -->
+<!-- ====================================================================== -->
+
+# Integrated SCI Writing Extension — 撰写 / 润色 / 投稿检索
+
+> **兼容性声明**：从文件开头到本扩展标记之前的全部内容是原始 v1.0.0 Skill，
+> 已按字节级完整保留。本扩展只增加能力，不删除、不改写原有数学建模转换逻辑。
+> 基线与哈希见 `config/preservation-manifest.json`，可运行
+> `python scripts/check_preservation.py` 验证。
+
+## 扩展后的适用范围
+
+除原有“数学建模报告 → SCI 论文”七阶段流程外，本 Skill 现在还可独立处理：
+
+- **SCI 论文撰写**：研究逻辑、章节结构、论证链、结果—讨论组织；
+- **语言润色**：语法、句式、学术语体、topic–stress、科学语气强度；
+- **投稿与期刊检索**：期刊匹配、实时规范核验、投稿材料、格式 preflight、审稿回复。
+
+**范围优先级说明**：对于命中新模块的请求，本扩展仅覆盖上文
+“纯文献综述/从零研究规划/非建模类润色不适用”的旧范围限制；
+它**不覆盖**任何原有的反幻觉、引用验证、数学语义、质量门控或审计要求。
+
+## 模块路由
+
+| 用户任务 | 主模块 | 与原有流程关系 |
+|---|---|---|
+| 数学建模报告转 SCI | `prompts/00-orchestrator.md` → S1–S7 | **完全沿用原流程** |
+| 从材料撰写 SCI 论文/章节 | `prompts/08-sci-writing.md` | 独立；也可接在 S2 后 |
+| 英文润色/深度学术润色 | `prompts/09-language-polish.md` | 独立；全文时建议在内容定稿后执行 |
+| 找期刊/比期刊/投稿规范 | `prompts/10-submission-journal-search.md` | 独立；建模稿优先继承 S4–S7 |
+| 混合任务 | 内容流程 → Module W → Module P → Module J | 不跳过保护/验证门控 |
+
+所有新增模块首先读取：
+`prompts/shared/05-integrity-preservation.md`。
+
+## 新增不可协商约束：数学建模内容零损失
+
+对数学建模文章，无论执行“撰写 / 润色 / 投稿检索”中的哪一个模块，都必须完整保留：
+
+1. **所有图片**：图像对象、图号、图题、图注及其信息关系；
+2. **所有表格**：结构、表号、表题、表注、数据、单位；
+3. **所有公式**：公式内容、编号、符号、变量定义、约束与数学语义；
+4. **所有核心结论**；
+5. **所有关键论述与支撑链条**；
+6. **所有关键数值、误差、不确定度、单位、范围与条件**。
+
+不得以“更简洁”“更适合期刊”“减少篇幅”“提高可读性”为理由自行删改、精简或重写。
+如果期刊规范与保护内容冲突，标记 `[[JOURNAL_CONFLICT]]` 并交由作者决定。
+
+## 统一证据纪律
+
+新增模块统一使用以下来源层级：
+
+`SOURCE_CONFIRMED` → `USER_CONFIRMED` → `VERIFIED_EXTERNAL` →
+`INFERRED` / `SUGGESTED` → `MISSING`
+
+- 观测/数据事实与机制解释必须分开；
+- 推断不得伪装为观测；
+- 缺数据时保留 `[[MISSING]]`；
+- 新增文献必须可验证；
+- IF、分区、APC、收录、模板、投稿要求等时效信息必须在任务发生时重新检索并记录日期。
+
+## Module W：SCI 撰写
+
+读取 `prompts/08-sci-writing.md`。
+
+核心流程：
+1. 建立 source ledger 与保护清单；
+2. 锁定 Research Question → Gap → Approach → Evidence → Contribution；
+3. 按章节 rhetorical moves 写作；
+4. Results 坚持 `Claim → Evidence → Quantification → Boundary`；
+5. Discussion 坚持“观察 → 解释 → 机制（必要时避险）→ 对比 → 替代解释/局限 → 意义”；
+6. 用 reviewer-perspective 五维自检，但不以总分掩盖缺失证据。
+
+## Module P：语言润色
+
+读取 `prompts/09-language-polish.md`。
+
+核心流程：
+1. 确定 proofread / academic polish / structural polish；
+2. 冻结 LaTeX、公式、引用、数字、单位、图表引用和术语；
+3. 先做科学语义冻结，再做语言优化；
+4. 校准因果与 hedging；
+5. 优化 topic–stress、旧→新信息、强动词与句式节奏；
+6. 全文或 LaTeX 工程采用“保护 → 安全切分 → 润色 → 重组 → diff/一致性审计”。
+
+## Module J：投稿与期刊检索
+
+读取 `prompts/10-submission-journal-search.md`。
+
+核心流程：
+1. 建立 manuscript profile；
+2. 候选发现 + scope/article-type 硬过滤；
+3. 为每个候选建立实时证据卡；
+4. 用 scope / method / evidence / audience / format / practical / indexing 多因子评分；
+5. 推荐 3–5 个有梯度的真实候选，并写明风险；
+6. 锁定期刊后生成 Guide for Authors compliance matrix；
+7. 准备 Cover Letter、声明、Highlights/Graphical Abstract（仅在需要时）；
+8. preflight 后再投稿；
+9. 审稿阶段用 point-by-point、可定位的 response workflow。
+
+## 开源调研与来源
+
+完整候选仓库、star 快照、许可证判断、可复用能力和整合决策见：
+
+`references/open-source-skill-survey.md`
+
+整合遵循：
+- MIT 来源：只做通用化重实现，并在调研文档归因；
+- GPL / 未声明许可 / 许可不明确来源：**只借鉴工作流思想，不复制代码、模板或大段 prompt**；
+- 本仓库仍按原 MIT License 发布。
+
+## 完整性验证
+
+更新后可执行：
+
+```bash
+python scripts/check_preservation.py
+pytest -q tests/test_preservation_contract.py
+```
+
+第一条检查：
+- 55 个原有非 `SKILL.md` 文件是否逐字节保持；
+- 原始 `SKILL.md` 的 9,679 bytes 前缀是否保持；
+- 任一原有文件或原始 Skill 前缀发生变化即 FAIL。
+
+这项检查用于保证本次能力扩展不会悄然损坏原有数学建模工作流。
