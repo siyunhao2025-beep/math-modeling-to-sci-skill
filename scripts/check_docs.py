@@ -78,17 +78,18 @@ def main() -> int:
         if not exists(rel):
             errors.append(f"missing required repository path: {rel}")
 
-    # Every literal scripts/foo.py path in Markdown must resolve. This replaces
-    # the old one-off blacklist and catches new documentation drift immediately.
+    # Every concrete scripts/foo.py path in Markdown must resolve. Illustrative
+    # placeholders such as scripts/.../...py are intentionally ignored.
     for p in ROOT.rglob("*.md"):
         if any(part in {".git", "runs"} for part in p.parts):
             continue
         body = p.read_text(encoding="utf-8", errors="replace")
         for ref in SCRIPT_REF_RE.findall(body):
+            if "..." in ref:
+                continue
             if not exists(ref):
                 errors.append(f"{p.relative_to(ROOT)}: references nonexistent script {ref}")
 
-    # Prompt inventory must include every actual prompt/shared file.
     prompt_readme = (ROOT / "prompts" / "README.md").read_text(encoding="utf-8")
     for p in (ROOT / "prompts").rglob("*.md"):
         if p.name == "README.md":
@@ -96,8 +97,6 @@ def main() -> int:
         if p.name not in prompt_readme:
             errors.append(f"prompts/README.md does not list {p.relative_to(ROOT / 'prompts')}")
 
-    # The legacy subdirectories are compatibility CLI shims, not Python
-    # packages. An __init__.py would create the import ambiguity reported in v2.
     for name in COMPAT_DIRS:
         flat = ROOT / "scripts" / f"{name}.py"
         shim = ROOT / "scripts" / name
