@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Reviewer Simulator Result",
+  "type": "object",
+  "required": ["round", "comments", "summary", "cover_letter_status"],
+  "properties": {
+    "round": {"type": "integer", "minimum": 1, "maximum": 3},
+    "journal": {"type": ["string", "null"]},
+    "comments": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["id", "persona", "severity", "objection", "location", "requires_author_data", "revision_plan", "response_draft", "status"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^RS-[0-9]+$"},
+          "persona": {"enum": ["handling_editor", "domain_reviewer", "methods_statistics_reviewer", "skeptical_reviewer"]},
+          "severity": {"enum": ["blocker", "major", "minor"]},
+          "objection": {"type": "string"},
+          "location": {"type": "string"},
+          "evidence": {"type": ["string", "null"]},
+          "what_would_satisfy": {"type": ["string", "null"]},
+          "requires_author_data": {"type": "boolean"},
+          "revision_plan": {"type": "string"},
+          "response_draft": {"type": "string"},
+          "change_made": {"type": ["string", "null"]},
+          "status": {"enum": ["OPEN", "RESOLVED", "AUTHOR_DECISION"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "blockers_open": {"type": "integer", "minimum": 0},
+        "major_open": {"type": "integer", "minimum": 0},
+        "minor_open": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "cover_letter_status": {"enum": ["NOT_READY", "DRAFT", "READY_FOR_AUTHOR_REVIEW"]}
+  },
+  "additionalProperties": true
+}
