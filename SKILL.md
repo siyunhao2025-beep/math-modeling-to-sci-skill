@@ -198,9 +198,14 @@ python scripts/report/build_report.py --workdir runs/demo --out 07-report/conver
 # Integrated SCI Writing Extension — 撰写 / 润色 / 投稿检索
 
 > **兼容性声明**：从文件开头到本扩展标记之前的全部内容是原始 v1.0.0 Skill，
-> 已按字节级完整保留。本扩展只增加能力，不删除、不改写原有数学建模转换逻辑。
-> 基线与哈希见 `config/preservation-manifest.json`，可运行
-> `python scripts/check_preservation.py` 验证。
+> 其 9,679-byte 前缀继续按字节保护。本扩展增加能力；后续为修复运行时/文档错误而修改的
+> 原有代码文件必须进入 `config/preservation-manifest.json` 的显式 bug-fix allowlist，并由
+> `python scripts/check_preservation.py` 对照 Git 基线检查。该机制是**兼容性回归保护**，
+> 不是防篡改或安全认证。
+
+新增模块先读取 `prompts/00-extension-router.md`，由它决定进入 W / P / J；它们是 Agent 模块，
+**不是** `scripts/run_pipeline.py` 中额外的 Python stage。若任务未经过 S1 形成 IR，不得声称
+G2/G6 或其他 IR 门控已经自动执行。
 
 ## 扩展后的适用范围
 
@@ -219,10 +224,10 @@ python scripts/report/build_report.py --workdir runs/demo --out 07-report/conver
 | 用户任务 | 主模块 | 与原有流程关系 |
 |---|---|---|
 | 数学建模报告转 SCI | `prompts/00-orchestrator.md` → S1–S7 | **完全沿用原流程** |
-| 从材料撰写 SCI 论文/章节 | `prompts/08-sci-writing.md` | 独立；也可接在 S2 后 |
-| 英文润色/深度学术润色 | `prompts/09-language-polish.md` | 独立；全文时建议在内容定稿后执行 |
-| 找期刊/比期刊/投稿规范 | `prompts/10-submission-journal-search.md` | 独立；建模稿优先继承 S4–S7 |
-| 混合任务 | 内容流程 → Module W → Module P → Module J | 不跳过保护/验证门控 |
+| 从材料撰写 SCI 论文/章节 | `prompts/00-extension-router.md` → `prompts/08-sci-writing.md` | Agent 独立模块 |
+| 英文润色/深度学术润色 | `prompts/00-extension-router.md` → `prompts/09-language-polish.md` | Agent 独立模块 |
+| 找期刊/比期刊/投稿规范 | `prompts/00-extension-router.md` → `prompts/10-submission-journal-search.md` | Agent 独立模块 |
+| 混合任务 | router → W → P → J（按需） | 不虚构未执行的 runtime gate |
 
 所有新增模块首先读取：
 `prompts/shared/05-integrity-preservation.md`。
@@ -309,13 +314,15 @@ python scripts/report/build_report.py --workdir runs/demo --out 07-report/conver
 更新后可执行：
 
 ```bash
+python scripts/check_docs.py
 python scripts/check_preservation.py
-pytest -q tests/test_preservation_contract.py
+pytest -q
 ```
 
-第一条检查：
-- 55 个原有非 `SKILL.md` 文件是否逐字节保持；
-- 原始 `SKILL.md` 的 9,679 bytes 前缀是否保持；
-- 任一原有文件或原始 Skill 前缀发生变化即 FAIL。
+检查含义：
+- 原始 `SKILL.md` 的 9,679-byte 前缀必须保持字节级一致；
+- 有 Git 历史时，从 v1.0.0 基线枚举全部原有文件，禁止删除，任何修改必须进入显式 bug-fix allowlist；
+- 无 Git 历史时只做前缀与关键路径的降级检查，并明确提示验证范围受限；
+- `check_docs.py` 同时检查配置/文档声明的关键脚本、示例、workflow 与资源路径是否真实存在。
 
-这项检查用于保证本次能力扩展不会悄然损坏原有数学建模工作流。
+这套机制用于发现兼容性回归与文档漂移；它**不**构成密码学防篡改证明。真正的论文科学内容保护还要依赖 IR/source ledger、G2/G6 和 `shared/05-integrity-preservation.md`。
