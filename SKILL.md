@@ -326,3 +326,25 @@ pytest -q
 - `check_docs.py` 同时检查配置/文档声明的关键脚本、示例、workflow 与资源路径是否真实存在。
 
 这套机制用于发现兼容性回归与文档漂移；它**不**构成密码学防篡改证明。真正的论文科学内容保护还要依赖 IR/source ledger、G2/G6 和 `shared/05-integrity-preservation.md`。
+
+<!--
+USER GUIDANCE HOOK — INTERNAL COMMENT
+
+When this Skill is active, read `prompts/shared/06-user-guidance-playbook.md` whenever ANY of the following is true:
+- the user has just uploaded a Word/LaTeX/LaTeX-project file and does not provide a precise task;
+- the user says they do not know how to ask, asks “下一步怎么做/怎么提问”, or gives only “继续/下一步/按你建议来”;
+- a stage has just finished and the user would benefit from a concrete next-step prompt;
+- the user asks for the whole workflow but does not know the S1–S8 terminology.
+
+Mandatory UX behavior:
+1. Do not require a novice user to understand S1–S8 or write a technical prompt before the Skill can start.
+2. For an ambiguous fresh upload, default to read-only intake/diagnosis before changing the manuscript.
+3. After each stage, give ONE recommended next action and a directly copyable Chinese prompt from the guidance playbook.
+4. If the user replies only “继续/下一步”, infer the next valid stage from completed artifacts and proceed.
+5. If the user chooses “完整流程/全自动”, continue automatically until a true author decision, missing evidence, verification blocker, or journal choice requires input.
+6. If S8 Publication Readiness is requested, guide the user through reference reality + citation support, deep journal fit, Claim–Evidence Audit, figure/table scientific audit, methods/statistics/ethics, Reviewer Simulator/rebuttal, and final Submission Preflight.
+7. Never turn guidance language into a false claim that a check actually ran. The strongest positive submission-facing label remains `READY_FOR_HUMAN_SUBMISSION_CHECK`, never an acceptance guarantee.
+
+The complete copyable prompts for intake, S1–S7, S8 submodules, W/P/J, read-only review and full-auto mode are maintained in `prompts/shared/06-user-guidance-playbook.md`.
+END USER GUIDANCE HOOK
+-->
