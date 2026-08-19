@@ -22,7 +22,7 @@
   "approved_bugfix_reasons": {
     "config/pipeline.yaml": "Fix invalid YAML syntax in recommendations[0] data-flow paths so the runtime can actually load the configuration.",
     "scripts/run_pipeline.py": "Implement the quality gates already specified by v1.0.0; repair run modes, stage resume, --show-audit, --journal alias, and honest --no-ai-stub behavior.",
-    "scripts/report.py": "Prevent demo/missing-validation runs from being mislabeled SUBMISSION_READY.",
+    "scripts/report.py": "Prevent demo/missing-validation runs from being mislabeled submission-ready and make the optional post-S6 readiness preflight authoritative when present.",
     "scripts/validate.py": "Align Finding output with validation.schema.json and correct PASS_WITH_WARNINGS verdict logic so G6 can evaluate real findings.",
     "prompts/README.md": "Synchronize the prompt inventory with the additive SCI extension and its publication-readiness routing while preserving the legacy workflow."
   },
@@ -68,7 +68,11 @@
     "prompts/18-methods-reporting-ethics.md",
     "prompts/shared/05-integrity-preservation.md",
     "references/open-source-skill-survey.md",
+    "references/publication-readiness-api-sources.md",
     "config/publication-readiness.yaml",
+    "config/schema/reviewer-simulation.schema.json",
+    "config/schema/citation-support-audit.schema.json",
+    "config/schema/submission-preflight.schema.json",
     "scripts/gates.py",
     "scripts/check_docs.py",
     "scripts/readiness/reference_verifier.py",
@@ -80,6 +84,7 @@
     "scripts/readiness/similarity_precheck.py",
     "scripts/readiness/template_fetch.py",
     "scripts/readiness/submission_preflight.py",
+    "scripts/readiness/run_readiness.py",
     "docs/architecture.md",
     "references/troubleshooting.md"
   ],
