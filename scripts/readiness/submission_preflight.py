@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One-click publication readiness preflight.
 
-Aggregates S6 validation plus the post-S6 readiness artifacts. The strongest
+Aggregates S6 validation plus post-S6 readiness artifacts. The strongest
 positive label is READY_FOR_HUMAN_SUBMISSION_CHECK: no deterministic/Agent tool
 can guarantee acceptance or replace the journal's submission portal validation.
 """
@@ -18,6 +18,7 @@ from readiness.utils import load_json, save_json  # noqa: E402
 REQUIRED = {
     "validation": "06-validate/validation-final.json",
     "references": "08-readiness/reference-verification.json",
+    "citation_support": "08-readiness/citation-support-audit.json",
     "journal_fit": "08-readiness/journal-fit.json",
     "claim_evidence": "08-readiness/claim-evidence-audit.json",
     "figure_table": "08-readiness/figure-table-audit.json",
@@ -25,10 +26,10 @@ REQUIRED = {
     "reviewer": "08-readiness/reviewer-simulation.json",
 }
 OPTIONAL = {
-    "citation_support": "08-readiness/citation-support-audit.json",
     "language": "08-readiness/language-audit.json",
     "similarity": "08-readiness/similarity-precheck.json",
     "template": "08-readiness/template-provenance.json",
+    "latex_compile": "08-readiness/latex-compile.json",
 }
 
 
@@ -37,7 +38,9 @@ def _load(root: Path, rel: str):
     return load_json(p) if p.is_file() else None
 
 
-def _latex_status(validation: dict) -> str:
+def _latex_status(validation: dict, standalone: dict | None) -> str:
+    if standalone and standalone.get("checker") == "latex_compile_check":
+        return standalone.get("status") or "missing"
     for c in validation.get("checkers", []):
         if c.get("name") == "latex_compile_check":
             return c.get("status") or "missing"
@@ -60,7 +63,7 @@ def run(workdir: str, out_json: str, out_md: str | None = None) -> dict:
 
     latex_build = (root / "05-template" / "build" / "main.tex").is_file()
     if latex_build:
-        latex = _latex_status(v)
+        latex = _latex_status(v, data.get("latex_compile"))
         if latex != "pass":
             blockers.append({"code": "LATEX_NOT_COMPILED", "area": "validation", "detail": f"latex_compile_check={latex}"})
 
@@ -68,18 +71,36 @@ def run(workdir: str, out_json: str, out_md: str | None = None) -> dict:
     if refs.get("blockers"):
         blockers.append({"code": "REFERENCE_VERIFICATION", "area": "references", "detail": refs.get("blockers")})
 
+    cs = data.get("citation_support") or {}
+    bad_cites = [x for x in cs.get("citations", []) if x.get("status") in ("CONTRADICTS", "DOES_NOT_SUPPORT")]
+    unknown_cites = [x for x in cs.get("citations", []) if x.get("status") == "CANNOT_VERIFY"]
+    if bad_cites:
+        blockers.append({"code": "CITATION_SUPPORT", "area": "citation_support", "detail": [x.get("id") for x in bad_cites]})
+    if unknown_cites:
+        warnings.append({"code": "CITATION_SUPPORT_AUTHOR_CHECK", "area": "citation_support", "detail": [x.get("id") for x in unknown_cites]})
+    if cs.get("blockers"):
+        blockers.append({"code": "CITATION_SUPPORT_DECLARED_BLOCKERS", "area": "citation_support", "detail": cs.get("blockers")})
+
     jf = data.get("journal_fit") or {}
     if jf.get("blockers"):
         blockers.append({"code": "JOURNAL_FIT", "area": "journal_fit", "detail": jf.get("blockers")})
     if (jf.get("baseline_fit_score_0_100") or 0) < 55:
         warnings.append({"code": "JOURNAL_FIT_LOW", "area": "journal_fit", "detail": jf.get("baseline_fit_score_0_100")})
+    semantic_fit = (jf.get("agent_semantic_review") or {}).get("decision")
+    if semantic_fit in ("WEAK_FIT", "BLOCKED_NEEDS_CURRENT_EVIDENCE"):
+        blockers.append({"code": "JOURNAL_SEMANTIC_FIT", "area": "journal_fit", "detail": semantic_fit})
+    elif semantic_fit is None:
+        warnings.append({"code": "JOURNAL_SEMANTIC_REVIEW_PENDING", "area": "journal_fit", "detail": "Agent semantic journal-fit decision missing"})
 
     ce = data.get("claim_evidence") or {}
     if ce.get("blockers"):
         blockers.append({"code": "CLAIM_EVIDENCE", "area": "claim_evidence", "detail": ce.get("blockers")})
-    semantic_bad = [c for c in ce.get("claims", []) if c.get("agent_semantic_status") in ("UNSUPPORTED", "CONTRADICTED") and c.get("risk") == "high"]
+    semantic_bad = [c for c in ce.get("claims", []) if c.get("agent_semantic_status") in ("UNSUPPORTED", "CONTRADICTED", "OUT_OF_SCOPE_GENERALIZATION") and c.get("risk") == "high"]
+    semantic_pending = [c for c in ce.get("claims", []) if c.get("agent_semantic_status") in (None, "PENDING")]
     if semantic_bad:
         blockers.append({"code": "SEMANTIC_CLAIM_FAILURE", "area": "claim_evidence", "detail": [c.get("id") for c in semantic_bad]})
+    if semantic_pending:
+        warnings.append({"code": "SEMANTIC_CLAIM_REVIEW_PENDING", "area": "claim_evidence", "detail": [c.get("id") for c in semantic_pending[:20]]})
 
     ft = data.get("figure_table") or {}
     if ft.get("blockers"):
@@ -99,13 +120,6 @@ def run(workdir: str, out_json: str, out_md: str | None = None) -> dict:
         blockers.append({"code": "REVIEWER_SIMULATOR_MAJOR", "area": "reviewer", "detail": [c.get("id") for c in unresolved]})
     if rev and len(rev.get("comments", [])) < 3:
         warnings.append({"code": "REVIEWER_SIMULATION_SHALLOW", "area": "reviewer", "detail": "fewer than 3 substantive comments"})
-
-    cs = data.get("citation_support") or {}
-    bad_cites = [x for x in cs.get("citations", []) if x.get("status") in ("CONTRADICTS", "DOES_NOT_SUPPORT")]
-    if bad_cites:
-        blockers.append({"code": "CITATION_SUPPORT", "area": "citation_support", "detail": [x.get("id") for x in bad_cites]})
-    elif data.get("citation_support") is None:
-        warnings.append({"code": "CITATION_SUPPORT_NOT_RUN", "area": "citation_support", "detail": "deep contextual citation audit not provided"})
 
     lang = data.get("language") or {}
     if lang.get("blockers"):
