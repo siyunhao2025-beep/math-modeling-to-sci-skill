@@ -1,79 +1,81 @@
 # Changelog
 
-本文件记录项目的所有显著变更。
-
-格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
-版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
+本文件记录项目的显著变更。版本号遵循 Semantic Versioning；根目录 `VERSION` 表示项目发行版本，`SKILL.md` 头部的 legacy `version: 1.0.0` 因兼容性保护暂不改动。
 
 ## [Unreleased]
 
 ### Added
-- （在此追加你的变更）
+- 后续改动在此记录。
 
-## [1.0.0] - 2026-08-19
+## [1.2.0] - 2026-08-19
 
-首个完整版本。七阶段流水线、提示词体系、质量门控与审计机制全部就位。
+本版本针对两轮严格代码/学术工程审查，把外部审查提出的 18 个风险从“人工提示词”进一步落成可回归验证的代码、文档与 CI 约束。
 
 ### Added
 
-**Skill 与文档**
-- `SKILL.md` — Skill 入口，含触发条件、五条核心设计原则、分阶段执行指引
-- `README.md` — 完整用途/用法/输入输出规范说明，含 Mermaid 流程图
-- `docs/architecture.md` — 数据流、状态机、质量门控、Schema 演进策略
-- `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` / `LICENSE`（含期刊模板版权附注）
+- `scripts/readiness/pipeline_bridge.py` — 自动从已有 S1–S7 workdir 解析 IR、BibTeX、S4 期刊/ISSN、build 路径并运行可确定执行的 S8 检查；缺少当前官方期刊证据时显式阻塞，不猜测。
+- `scripts/audit_repo.py` — 18 项仓库风险回归审计：S8 孤儿、文档路径、门控、兼容 CLI 命名空间、prompt 漏登记、preservation 治理、CI 等。
+- `prompts/shared/06-user-guidance-playbook.md` — 新手从上传 Word/LaTeX 开始的逐步中文提示词；支持“继续/下一步/按完整流程执行”。
+- S8 Publication Readiness Suite：真实引用、citation support、deep journal fit、Claim–Evidence、图表、方法/统计/伦理、Reviewer Simulator、Submission Preflight。
 
-**七阶段提示词体系**
-- `prompts/00-orchestrator.md` — 总控编排器，含状态机与门控决策逻辑
-- `prompts/01-ingest-parse.md` — 输入解析（Word/LaTeX → IR），语义角色标注
-- `prompts/02-academic-rewrite.md` — 学术化改写，体裁转换 + 文献综述 + 创新点声明
-- `prompts/03-quality-assessment.md` — 六维评分卡与改进项生成
-- `prompts/04-journal-matching.md` — 期刊匹配，带证据与拒稿风险评估
-- `prompts/05-template-adaptation.md` — 模板适配与三级降级策略
-- `prompts/06-multi-round-validation.md` — 多轮校验，迭代至零 error
-- `prompts/07-final-report.md` — 成稿与转换报告生成
-- `prompts/shared/` — 角色前言、IO 契约、异常处理、术语表四个公共片段
-- `prompts/README.md` — 提示词衔接逻辑与数据流转说明
+### Changed
 
-**数据契约**
-- `config/schema/manuscript.schema.json` — IR schema（v1.0）
-- `config/schema/assessment.schema.json` — 质量评估 schema
-- `config/schema/journal-match.schema.json` — 期刊推荐 schema
-- `config/schema/audit-log.schema.json` — 审计事件 schema
+- `scripts/run_pipeline.py` — 在真实 Agent S2/S3 模式下，进入 S7 前通过 S8 bridge 自动尝试投稿就绪检查；新增 `--readiness auto|required|off` 与可选 similarity precheck。`--ai-stub` 仍只用于 demo，并不会被当作真实稿件送去 S8。
+- `scripts/readiness/run_readiness.py` — 从“手工填写 --ir/--bib/--issn/--aims-scope-file ...”改为只要求 `--workdir`；其余均为高级 override。
+- `README.md` / `prompts/README.md` — 同步 S1–S8、W/P/J、用户引导、CLI/Agent 边界、当前期刊证据要求和兼容命名约定。
+- `scripts/check_docs.py` — 从单个坏路径黑名单升级为全 Markdown `scripts/*.py` 路径核验、完整 prompt inventory 核验，以及 compatibility shim package-shadow 检查。
+- `scripts/check_preservation.py` / `config/preservation-manifest.json` — 在原 v1.0.0 baseline 外增加 extension baseline 治理；继续明确这只是兼容性回归守卫，不是密码学防篡改证明。
+- `examples/input/sample-model-report.tex` — 明确标为 legacy compatibility alias；新文档统一使用 `sample-modeling-report.tex`。
 
-**配置**
-- `config/pipeline.yaml` — 阶段编排、依赖、超时、重试策略
-- `config/quality-gates.yaml` — G1–G6 六个门控的阈值与失败动作
-- `config/journals.yaml` — 期刊种子库（含 IF 年份/来源/采集日期元数据）
-- `config/style-rules.yaml` — 学术语言规则（时态、语态、禁用词、模糊限定词）
+### Fixed
 
-**脚本层**
-- `scripts/run_pipeline.py` — CLI 编排入口，支持 `auto`/`interactive`/`dry-run` 三模式、
-  按阶段续跑、快照回退、审计查看
-- `scripts/ingest/` — `detect_format.py`、`parse_docx.py`、`parse_latex.py`
-- `scripts/validate/` — `validate_ir.py`、`check_citations.py`、
-  `check_figures_tables.py`、`check_equations.py`、`latex_compile_check.py`
-- `scripts/journals/` — `match_journals.py`（多因子加权匹配）、`fetch_template.py`（三级降级）
-- `scripts/render/` — `render_latex.py`、`render_docx.py`
-- `scripts/report/build_report.py` — 八段式转换报告生成
-- `scripts/audit/logger.py` — append-only JSONL 审计日志
+- 防止 S8 功能存在但主流程完全无法到达。
+- 防止 `scripts/ingest.py` 与 `scripts/ingest/` 等兼容路径被误改成同名 import package。
+- 修复 prompt README 未登记 `06-user-guidance-playbook.md` 的漂移。
+- 修复旧 Changelog 曾把实际 `scripts/audit.py` 误写成一个并不存在的 `audit/logger.py` 子路径的问题。
+- 移除旧 Changelog 中对未存在 `release.yml` / Dependabot 配置的过度声明；当前 CI 以 `.github/workflows/ci.yml` 和 `.github/workflows/validate-skill.yml` 为准。
 
-**资产与示例**
-- `assets/templates/` — IEEE / Elsevier / Springer 三套内置骨架（降级兜底，非出版商原件）
-- `assets/checklists/` — 格式、引用、投稿前三份清单
-- `references/` — SCI 写作惯例、建模报告→论文映射表、期刊库说明、故障手册
-- `examples/` — 示例输入与全套输出产物
-- `tests/` — 覆盖格式检测、LaTeX 解析、IR 校验、期刊匹配、引用检查
+## [1.1.0] - 2026-08-19
 
-**CI/CD**
-- `.github/workflows/ci.yml` — ruff lint + 多版本 pytest + 端到端冒烟
-- `.github/workflows/validate-skill.yml` — SKILL.md frontmatter 与 schema 一致性校验
-- `.github/workflows/release.yml` — tag 触发打包与 Release
-- Issue / PR 模板，含期刊模板申请专用模板
-- `dependabot.yml`
+### Added
 
-### Security
-- `.gitignore` 默认排除 `*.docx` / `*.pdf` / `.env`，防止误提交他人稿件与凭据
-- 所有外部检索结果落盘存证于 `04-journals/journal-evidence/`，可复核
+- W/P/J：SCI Writing、Language Polish、Journal & Submission 扩展。
+- Scientific Content Preservation Contract 与兼容性回归检查。
+- 可执行 G1–G6 `GateEvaluator`。
+- S8 Publication Readiness 的首版 prompt/工具层。
 
-[Unreleased]: https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/releases/tag/v1.0.0
+### Fixed
+
+- 修正原始文档中的阶段脚本路径/示例路径兼容问题。
+- 补齐 `docs/architecture.md` 与 `references/troubleshooting.md`。
+- `--no-ai-stub` 明确为“读取真实 Agent 产物”，不再暗示 CLI 内置 LLM 调用。
+
+## [1.0.0] - 2026-08-19
+
+首个完整版本：七阶段 S1–S7、提示词体系、结构化 IR、质量评分、期刊种子匹配、模板适配、多轮校验和审计日志骨架。
+
+主要入口：
+
+- `SKILL.md`
+- `prompts/00-orchestrator.md`
+- `config/pipeline.yaml`
+- `config/quality-gates.yaml`
+- `scripts/run_pipeline.py`
+- `scripts/ingest.py`
+- `scripts/journals.py`
+- `scripts/render.py`
+- `scripts/validate.py`
+- `scripts/report.py`
+- `scripts/audit.py`
+
+兼容命令位于 package-less 子目录，例如 `scripts/ingest/parse_latex.py`、`scripts/journals/match_journals.py`、`scripts/validate/check_citations.py`；这些是 thin CLI shims，不是第二套独立 Python package 实现。
+
+当前自动化工作流：
+
+- `.github/workflows/ci.yml`
+- `.github/workflows/validate-skill.yml`
+
+[Unreleased]: https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/compare/master...HEAD
+[1.2.0]: https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/releases
+[1.1.0]: https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/releases
+[1.0.0]: https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/releases

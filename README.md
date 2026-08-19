@@ -2,49 +2,91 @@
 
 # math-modeling-to-sci-skill
 
-**把数学建模报告变成可投稿的 SCI 论文**
+**把数学建模报告系统转换为 SCI 稿件，并在投稿前做证据、期刊 fit 与审稿人视角审查**
 
-一个 Agent Skill：输入 Word / LaTeX 建模文章，输出学术化成稿 + 质量评分 + 期刊推荐 + 模板适配 + 转换报告。
+支持 Word / LaTeX / LaTeX 工程；保留原始 S1–S7 转换流水线，并增加 W/P/J 学术写作模块与 S8 Publication Readiness Suite。
 
 [![CI](https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/actions/workflows/ci.yml)
 [![Validate Skill](https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/actions/workflows/validate-skill.yml/badge.svg)](https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/actions/workflows/validate-skill.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 
-[快速开始](#快速开始) · [工作流](#工作流七个阶段) · [输入输出规范](#输入输出规范) · [质量保障](#准确性与完整性保障) · [贡献](CONTRIBUTING.md)
-
 </div>
+
+---
+
+## 不知道怎么提问？
+
+直接上传你的 `.docx` / `.tex` / LaTeX `.zip`，然后发一句：
+
+> **开始第一步**
+
+Skill 会先做**只读体检**，不急着改正文：确认文章类型、结构、图表、公式、引用、核心结论与主要风险，再告诉你下一步。如果希望一路执行到投稿前审查，可以发：
+
+> **按完整流程执行**
+
+每一步结束后，Skill 会只给你一个最推荐的下一步和一段可直接复制的中文提示词。完整新手引导维护在 [`prompts/shared/06-user-guidance-playbook.md`](prompts/shared/06-user-guidance-playbook.md)。
 
 ---
 
 ## 这个项目解决什么问题
 
-数学建模报告（竞赛论文、课程项目、企业技术报告）和 SCI 论文是**两种不同的体裁**：
+数学建模报告和 SCI 论文不是同一种体裁。前者围绕“解题过程”，后者需要明确的研究问题、研究缺口、方法证据链、结果边界、文献定位和投稿规范。本项目把转换与投稿前检查拆成可追踪的阶段，并坚持三条底线：
 
-| 维度 | 建模报告 | SCI 论文 |
-|------|---------|---------|
-| 目标读者 | 评委 | 同领域研究者 |
-| 组织逻辑 | 问题一/二/三 | 研究缺口 → 方法 → 验证 → 贡献 |
-| 文献 | 可选、少量 | 必需、构成研究定位 |
-| 创新表述 | 隐含在解法里 | 必须显式声明并与前人对比 |
-| 语言 | 陈述解题过程 | 论证学术主张 |
-| 篇幅结构 | 假设/符号说明占大头 | Intro + Related Work 占大头 |
+- **不补造研究事实**：原文缺失内容用 `[[MISSING]]` / `[[AUTHOR_CHECK]]` 暴露；
+- **不把未验证引用写成真引用**：S8 可用 Crossref 为主、Semantic Scholar / PubMed 辅助核验 DOI/元数据；
+- **不为了“写得更像 SCI”破坏科学内容**：公式、变量、关键数值、图表、核心结论和论证强度受保护。
 
-手工转换要反复处理体裁改写、文献补齐、期刊选择、模板排版、格式校验——本项目把这条链路
-拆成 7 个可审计、可断点续跑的阶段，每阶段有独立提示词、结构化输入输出契约和质量门控。
+它不替作者做未完成的实验，不伪造伦理批号/数据链接，也不预测或保证录用。
 
-**它不做什么**：不替你做研究，不编造实验数据，不保证录用。原文缺什么，它会明确告诉你缺什么。
+---
 
-## 特性
+## 当前能力
 
-- **双格式输入** — `.docx`、`.tex` 单文件、LaTeX 多文件工程（`.zip`），自动识别
-- **结构化中间表示（IR）** — 所有阶段围绕 `manuscript.ir.json` 流转，JSON Schema 强校验
-- **六维质量评分卡** — 创新性/严谨性/完整性/表达/结构/可复现性，加权总分 + 可执行改进项
-- **期刊匹配带证据** — 3–5 个推荐，每个附 IF、分区、Aims&Scope 契合点、拒稿风险、检索来源
-- **模板适配三级降级** — 官方模板 → 出版商通用 → 内置骨架，降级必声明
-- **多轮硬校验** — 引用/图表/公式/编译/CJK 残留，迭代到零 error 才放行
-- **全链路审计** — `audit.jsonl` append-only 记录每次调用、每个门控决策、每次自动修复
-- **反幻觉设计** — 缺失内容标 `[[MISSING]]`，未验证引用标 `[[UNVERIFIED_REF]]`，绝不填空
+### S1–S7：数学建模报告 → SCI 论文
+
+```text
+S1 解析 → G1 → S2 学术化改写 → G2 → S3 质量评估 → G3
+  → S4 期刊候选 → G4 → S5 模板适配 → G5 → S6 多轮校验 → G6
+                                                            ↓
+                                               S8 投稿就绪审查（推荐）
+                                                            ↓
+                                                    S7 最终报告/投稿包
+```
+
+- S1：解析 Word/LaTeX/ZIP，建立 IR 与图表/公式/引用清单；
+- S2：Agent 将报告体转换为 SCI 论证结构；
+- S3：六维质量评估；
+- S4：本地 seed 只负责候选初筛，时效性期刊信息必须再核验；
+- S5：模板适配；
+- S6：引用/图表/公式/编译/CJK/格式等硬检查；
+- G1–G6：由 [`scripts/gates.py`](scripts/gates.py) 真正求值，失败会按配置重试、降级或阻断；
+- S7：根据真实 artifacts 生成保守的最终状态报告。
+
+### W / P / J：通用 SCI 扩展
+
+- **W — SCI Writing**：Research Question → Gap → Approach → Evidence → Contribution；
+- **P — Language Polish**：学术英文、去 AI 套话、hedging、时态/句式，同时冻结公式/数字/引用；
+- **J — Journal & Submission**：期刊检索、Guide for Authors、Cover Letter、投稿材料、审稿回复。
+
+路由见 [`prompts/00-extension-router.md`](prompts/00-extension-router.md)。
+
+### S8：Publication Readiness Suite
+
+S8 重点检查“能不能经得住编辑和审稿人追问”，而不只是语言是否漂亮：
+
+1. **Reference Reality Layer**：DOI/元数据真实性、严格 clean BibTeX；
+2. **Citation Depth Audit**：文献是否真的支持正文对应 claim；
+3. **Deep Journal Fit**：当前官方 Aims & Scope、Article Type、近 12 个月公开期刊记录、desk-reject 风险；
+4. **Claim–Evidence Audit**：关键定量/比较/因果/机制结论映射到图表、公式、数据、统计或验证文献；
+5. **Figure/Table Audit**：正文引用、caption、轴/单位/误差棒/尺度/数值一致性与视觉风险；
+6. **Methods/Statistics/Reporting/Ethics**：方法、统计、报告规范、伦理与数据/代码可用性；
+7. **Reviewer Simulator + Rebuttal Loop**：模拟编辑、领域、方法统计和挑剔审稿人，生成实质性质疑与修订回路；
+8. **Submission Preflight**：汇总全部证据，只输出 `BLOCKED` / `AUTHOR_ACTION_REQUIRED` / `READY_FOR_HUMAN_SUBMISSION_CHECK`。
+
+`READY_FOR_HUMAN_SUBMISSION_CHECK` 只表示自动/Agent 预检未发现既定阻塞项，**不是录用保证**。
+
+---
 
 ## 快速开始
 
@@ -56,341 +98,178 @@ cd math-modeling-to-sci-skill
 pip install -r requirements.txt
 ```
 
-可选但推荐（用于 LaTeX 编译校验与 PDF 产出）：
-
-```bash
-# TeX Live 或 MiKTeX，需包含 latexmk 与 biber
-latexmk --version && biber --version
-```
+LaTeX 投稿建议额外安装 TeX Live / MiKTeX，使真实编译检查可用。
 
 ### 作为 Agent Skill 使用
 
-把仓库放进你的 Agent 技能目录：
+把仓库放进你的 Agent Skill 目录后，直接上传稿件并说：
 
-```bash
-# WorkBuddy / Claude Code 用户级
-cp -r math-modeling-to-sci-skill ~/.workbuddy/skills/math-modeling-to-sci
+> 请先不要改正文，完整读取我上传的 Word/LaTeX，做一次投稿前体检，然后按 Skill 的流程告诉我下一步。
 
-# 项目级
-cp -r math-modeling-to-sci-skill <your-project>/.workbuddy/skills/math-modeling-to-sci
-```
+或者：
 
-然后直接对话：
-
-> 把 `报告.docx` 改成 SCI 论文，评估一下质量，推荐几个能投的期刊，套好模板给我。
-
-Agent 会读取 `SKILL.md` → `prompts/00-orchestrator.md`，按七阶段自动执行。
+> 按完整流程执行：从解析、SCI 化改写、质量评估、期刊筛选、模板适配、技术校验，到 S8 引用/证据/期刊 fit/模拟审稿和最终 preflight。
 
 ### 作为命令行工具使用
 
+CLI **不会自己调用 LLM**。S2/S3 的真实产物需要 Agent 先写入 workdir；默认 `--ai-stub` 只用于 demo/test。
+
 ```bash
-# 全自动
-python scripts/run_pipeline.py --input path/to/report.docx --workdir runs/my-paper --mode auto
+# Demo：只验证 deterministic 流程，不代表真实 SCI 评估
+python scripts/run_pipeline.py \
+  --input examples/input/sample-modeling-report.tex \
+  --workdir runs/demo \
+  --mode dry-run
 
-# 交互式（每个质量门控暂停确认，首次推荐）
-python scripts/run_pipeline.py --input path/to/report.tex --workdir runs/my-paper --mode interactive
+# 真实 Agent 已生成 S2/S3 后，从已有阶段继续；S8 在进入 S7 前自动尝试
+python scripts/run_pipeline.py \
+  --workdir runs/my-paper \
+  --stage S4 \
+  --no-ai-stub \
+  --readiness auto
 
-# 只评估不改写
-python scripts/run_pipeline.py --input path/to/report.tex --workdir runs/eval --mode dry-run
+# 严格模式：只要 S8 未达到 READY_FOR_HUMAN_SUBMISSION_CHECK 就返回非零
+python scripts/run_pipeline.py \
+  --workdir runs/my-paper \
+  --stage S4 \
+  --no-ai-stub \
+  --readiness required
 
-# 断点续跑：从 S5 开始
-python scripts/run_pipeline.py --workdir runs/my-paper --stage S5
+# 只运行 S8；只需 workdir，其余信息会优先从已有 artifacts 自动解析
+python scripts/readiness/run_readiness.py --workdir runs/my-paper
 
-# 指定目标期刊，跳过自动匹配
-python scripts/run_pipeline.py --workdir runs/my-paper --stage S5 --journal "Applied Mathematical Modelling"
+# 显式关闭 S8（例如只做 legacy 转换）
+python scripts/run_pipeline.py --workdir runs/my-paper --stage S4 --no-ai-stub --readiness off
 
-# 查看审计轨迹
+# 查看全链路审计
 python scripts/run_pipeline.py --workdir runs/my-paper --show-audit
 ```
 
-试跑内置示例：
+S8 的期刊官方证据不会被猜测。推荐约定放到：
+
+```text
+runs/my-paper/04-journals/journal-evidence/
+├── aims-scope.txt
+├── article-types.txt
+└── target-journal.json
+```
+
+`target-journal.json` 可记录 `journal_name`、`issn`、`scope_source_url`、`article_type`、`article_type_source_url`。缺失当前官方证据时，S8 会明确阻塞而不是伪造 PASS。
+
+---
+
+## 输入输出
+
+### 支持输入
+
+| 格式 | 支持 | 说明 |
+|---|---|---|
+| Word `.docx` | ✅ | 标准 OOXML |
+| LaTeX `.tex` | ✅ | 单文件 |
+| LaTeX `.zip` | ✅ | 多文件工程，自动定位主文件 |
+| Markdown `.md` | 实验性 | 可转 IR |
+| PDF | 不作为主输入 | 为避免公式/图表/引用结构丢失，优先提供源文件 |
+
+### 典型 workdir
+
+```text
+runs/my-paper/
+├── 00-input/
+├── 01-parse/manuscript.ir.json
+├── 02-rewrite/manuscript.rewritten.json
+├── 03-assess/assessment.json
+├── 04-journals/
+│   ├── journal-match.json
+│   └── journal-evidence/
+├── 05-template/
+│   ├── MANIFEST.json
+│   └── build/main.tex
+├── 06-validate/validation-final.json
+├── 08-readiness/
+│   ├── resolved-inputs.json
+│   ├── readiness-run.json
+│   ├── reference-verification.json
+│   ├── references.clean.bib
+│   ├── citation-support-audit.json
+│   ├── journal-fit.json
+│   ├── claim-evidence-audit.json
+│   ├── figure-table-audit.json
+│   ├── compliance-audit.json
+│   ├── reviewer-simulation.json
+│   └── submission-preflight.json
+├── conversion-report.md
+└── audit.jsonl
+```
+
+Agent-only artifacts（如 citation-support、Reviewer Simulator、视觉科学判断）不会由 Python 用空壳文件冒充完成；缺失时 preflight 会保持阻塞或要求作者处理。
+
+---
+
+## 期刊匹配：不要误读本地 seed
+
+[`config/journals.yaml`](config/journals.yaml) 是**候选种子库**，不是实时 JCR 数据库。CLI 的 S4 可以离线初筛，但 IF、分区、APC、Article Type、Aims & Scope、模板和收录状态都可能变化。面向实际投稿的判断必须由 J/S8 在任务发生时重新核验当前权威来源，并记录检索日期。
+
+因此：
+
+- 本地 S4 `match_score` ≠ 接收概率；
+- seed IF/分区 ≠ 当前已核验指标；
+- 期刊投稿 URL ≠ Aims & Scope 证据；
+- Crossref 的近期记录是 published/online records，不等同于 accepted manuscripts。
+
+---
+
+## 科学内容与反幻觉保护
+
+扩展模块统一读取 [`prompts/shared/05-integrity-preservation.md`](prompts/shared/05-integrity-preservation.md)。核心保护对象包括：
+
+- 所有图片/表格及编号、caption、单位；
+- 所有公式、变量、定义、约束；
+- 所有关键数值、误差、不确定度、范围和符号；
+- 核心结论与关键论证链；
+- 引用 key、DOI/URL、交叉引用；
+- 直接观测与机制推断的语气强度。
+
+期刊规范与受保护科学内容冲突时使用 `[[JOURNAL_CONFLICT]]`，交给作者决定。
+
+---
+
+## 质量门控与真实性边界
+
+- G1–G6：[`config/quality-gates.yaml`](config/quality-gates.yaml) + [`scripts/gates.py`](scripts/gates.py)；
+- S8 最终门：[`scripts/readiness/submission_preflight.py`](scripts/readiness/submission_preflight.py)；
+- 兼容性回归：[`scripts/check_preservation.py`](scripts/check_preservation.py)，明确**不是**密码学防篡改机制；
+- 两轮外部审查的 18 项风险回归：[`scripts/audit_repo.py`](scripts/audit_repo.py)。
+
+---
+
+## 开发者回归检查
+
+提交 PR 前运行：
 
 ```bash
-python scripts/run_pipeline.py --input examples/input/sample-model-report.tex --workdir runs/demo --mode dry-run
+python -m compileall -q scripts tests
+python scripts/check_docs.py
+python scripts/audit_repo.py
+python scripts/check_preservation.py
+pytest -q
 ```
 
-## 工作流：七个阶段
+CI 会重复这些检查，避免“文档写了但代码不存在”“新增 prompt 没登记”“S8 又变成孤儿”“兼容 CLI 变成同名 Python package”等问题回归。
 
-```mermaid
-flowchart TD
-    IN([".docx / .tex / .zip"]) --> S1
+---
 
-    S1["<b>S1 输入解析</b><br/>格式识别 · 章节树抽取<br/>公式/图表/引用提取"]
-    S1 --> G1{"G1<br/>结构完整?"}
-    G1 -- 否 --> R1["补全策略<br/>标记 MISSING"] --> S1
-    G1 -- 是 --> S2
+## 名称与版本
 
-    S2["<b>S2 学术化改写</b><br/>体裁转换 · 文献综述<br/>研究缺口 · 创新点声明"]
-    S2 --> G2{"G2<br/>引用可验证?<br/>无幻觉?"}
-    G2 -- 否 --> S2
-    G2 -- 是 --> S3
+- **仓库/发行名**：`math-modeling-to-sci-skill`
+- **Skill 标识**：`math-modeling-to-sci`
+- 项目发行版本以根目录 [`VERSION`](VERSION) 为准。
 
-    S3["<b>S3 质量评估</b><br/>六维评分卡<br/>加权总分 + 改进项"]
-    S3 --> G3{"G3<br/>总分达阈值?"}
-    G3 -- 否 --> S2
-    G3 -- 是 --> S4
+Skill 标识与仓库名的差异是为了保持原始 v1.0.0 `SKILL.md` 前缀兼容性，不是两个不同项目。不要为了统一名字而破坏旧 Skill 调用入口。
 
-    S4["<b>S4 期刊匹配</b><br/>候选池打分 · 联网核实 IF<br/>推荐 3-5 个 + 理由"]
-    S4 --> G4{"G4<br/>≥3 个有效候选?"}
-    G4 -- 否 --> RE["放宽约束<br/>扩大候选池"] --> S4
-    G4 -- 是 --> S5
+---
 
-    S5["<b>S5 模板适配</b><br/>获取模板 · 内容重组<br/>三级降级策略"]
-    S5 --> S6
+## 许可证与贡献
 
-    S6["<b>S6 多轮校验</b><br/>引用/图表/公式/编译/CJK<br/>迭代至零 error"]
-    S6 --> G6{"G6<br/>0 error?"}
-    G6 -- "否 且 轮次<上限" --> S6
-    G6 -- "否 且 达上限" --> BLK["标记阻塞项<br/>降级为草稿"] --> S7
-    G6 -- 是 --> S7
+MIT License。开放 Issue / PR。开源能力调研与许可证处理说明见 [`references/open-source-skill-survey.md`](references/open-source-skill-survey.md)。
 
-    S7["<b>S7 结果汇报</b><br/>成稿 + 转换报告<br/>修改记录 · 待补清单"]
-    S7 --> OUT([成稿 + conversion-report.md])
-
-    AUD[("audit.jsonl<br/>全链路审计")]
-    S1 -.-> AUD
-    S2 -.-> AUD
-    S3 -.-> AUD
-    S4 -.-> AUD
-    S5 -.-> AUD
-    S6 -.-> AUD
-    S7 -.-> AUD
-```
-
-各阶段职责与提示词一览：
-
-| # | 阶段 | 提示词 | 关键产物 | 门控 |
-|---|------|--------|---------|------|
-| S1 | 输入解析 | [`01-ingest-parse.md`](prompts/01-ingest-parse.md) | `manuscript.ir.json` | G1 结构完整性 |
-| S2 | 学术化改写 | [`02-academic-rewrite.md`](prompts/02-academic-rewrite.md) | `manuscript.rewritten.json`、`references.bib` | G2 引用可验证 |
-| S3 | 质量评估 | [`03-quality-assessment.md`](prompts/03-quality-assessment.md) | `assessment.json` | G3 分数阈值 |
-| S4 | 期刊匹配 | [`04-journal-matching.md`](prompts/04-journal-matching.md) | `journal-match.json` | G4 候选数量 |
-| S5 | 模板适配 | [`05-template-adaptation.md`](prompts/05-template-adaptation.md) | `build/main.tex`/`main.docx` | G5 模板就绪 |
-| S6 | 多轮校验 | [`06-multi-round-validation.md`](prompts/06-multi-round-validation.md) | `validation-final.json` | **G6 零 error（硬）** |
-| S7 | 结果汇报 | [`07-final-report.md`](prompts/07-final-report.md) | `conversion-report.md` | — |
-
-编排逻辑、数据流转、阶段衔接契约见 [`prompts/00-orchestrator.md`](prompts/00-orchestrator.md)
-与 [`docs/architecture.md`](docs/architecture.md)。
-
-## 输入输出规范
-
-### 输入
-
-| 格式 | 扩展名 | 支持度 | 说明 |
-|------|--------|--------|------|
-| Word | `.docx` | 完整 | 需为标准 OOXML；`.doc` 请先转存 |
-| LaTeX 单文件 | `.tex` | 完整 | 自动解析 `\input`/`\include` |
-| LaTeX 工程 | `.zip` | 完整 | 自动定位主文件（含 `\documentclass`） |
-| Markdown | `.md` | 实验性 | 转 IR 后走同一链路 |
-| PDF | `.pdf` | 不支持 | 抽取保真度不可控，请提供源文件 |
-
-对输入的要求（不满足时会降级处理并在报告中提示）：
-
-- 有可识别的标题与章节层级（Word 用样式或粗体，LaTeX 用 `\section`）
-- 图表有编号或题注（缺失时自动编号并记录）
-- 公式为可解析文本或 OMML（Word 的公式图片无法解析，会写入 `gaps`）
-- 参考文献有独立章节或 `.bib` 文件
-
-### 输出
-
-```
-runs/<name>/
-├── 07-report/
-│   ├── conversion-report.md      ← 先看这个
-│   ├── manuscript-final.pdf
-│   └── manuscript-final.docx
-├── 05-template/build/
-│   ├── main.tex                  ← 投稿用源文件
-│   ├── references.bib
-│   └── figures/
-├── 03-assess/assessment.json     ← 质量评分卡
-├── 04-journals/journal-match.json ← 期刊推荐
-└── audit.jsonl                   ← 审计日志
-```
-
-`conversion-report.md` 的固定结构：
-
-1. **转换摘要** — 输入格式、目标期刊、最终状态（可投稿 / 需补充 / 阻塞）
-2. **质量评分卡** — 六维得分、加权总分、与阈值对比
-3. **逐章修改记录** — 原文位置 → 改写后位置 → 改动类型 → 理由
-4. **期刊推荐表** — 3–5 个，含 IF、分区、周期、契合理由、风险
-5. **校验结果** — 各轮 error/warning 数量、已自动修复项、残留项
-6. **待补清单** — 所有 `[[MISSING]]`，按优先级排序，附具体补充指引
-7. **投稿前 checklist** — 逐项勾选表
-8. **降级与限制声明** — 所有降级处理的如实披露
-
-### 中间表示（IR）
-
-所有阶段共享的数据契约，schema 见 [`config/schema/manuscript.schema.json`](config/schema/manuscript.schema.json)：
-
-```json
-{
-  "schema_version": "1.0",
-  "meta": { "title": "...", "authors": [...], "keywords": [...], "language": "zh" },
-  "sections": [
-    {
-      "id": "sec-3",
-      "level": 1,
-      "heading": "模型建立",
-      "semantic_role": "methodology",
-      "blocks": [
-        { "type": "paragraph", "text": "..." },
-        { "type": "equation", "id": "eq-7", "latex": "...", "numbered": true },
-        { "type": "figure", "id": "fig-2", "caption": "...", "path": "figures/f2.png" }
-      ]
-    }
-  ],
-  "equations": [...], "figures": [...], "tables": [...],
-  "references": [...], "symbol_map": {...},
-  "gaps": [ { "id": "gap-1", "severity": "high", "where": "sec-4", "what": "缺少对照实验" } ]
-}
-```
-
-`semantic_role` 取值：`abstract` `introduction` `related_work` `problem_statement`
-`assumptions` `notation` `methodology` `experiments` `results` `discussion`
-`conclusion` `limitations` `references` `appendix` `unclassified`
-
-## 准确性与完整性保障
-
-四层机制，详见 [`docs/architecture.md`](docs/architecture.md)。
-
-### 1. 质量门控（Quality Gate）
-
-配置在 [`config/quality-gates.yaml`](config/quality-gates.yaml)，每个门控定义
-判定条件、失败动作（`retry` / `rollback` / `degrade` / `block`）、最大重试次数。
-
-| Gate | 位置 | 判定 | 失败动作 |
-|------|------|------|---------|
-| G1 | S1 后 | 必需章节齐全、公式/图表未丢失 | `retry`（换解析策略）→ `degrade` |
-| G2 | S2 后 | 无未验证引用、无幻觉数值、术语一致 | `retry`（最多 2 次）→ `block` |
-| G3 | S3 后 | 加权总分 ≥ `min_total_score` | `rollback` 到 S2 定向重写 |
-| G4 | S4 后 | 有效候选 ≥ 3 | `retry`（放宽 scope 约束） |
-| G5 | S5 后 | 模板文件就绪、字段映射完备 | `degrade`（三级降级） |
-| **G6** | S6 后 | `error == 0` | `retry`（≤4 轮）→ `block` |
-
-### 2. 多轮自检与交叉验证
-
-- **纵向自检**：每阶段输出后先做 schema 校验，再做该阶段专属规则检查
-- **横向交叉验证**：
-  - 引用一致性 — 正文 `\cite` ∩ `.bib` 条目，双向零差集
-  - 图表一致性 — 每个 `figure`/`table` 都被正文引用，且编号连续
-  - 公式一致性 — 编号公式必被引用；符号在 `symbol_map` 中有定义
-  - 数值一致性 — 改写后数值与原 IR 逐一比对，任何变动视为 error
-  - 长度一致性 — 各节字数与目标期刊约束比对
-- **独立复核视角**：S3 评估与 S6 校验使用互不相同的提示词与判据，避免同一视角自我确认
-
-### 3. 错误恢复与回退
-
-- 每阶段开始前对 `workdir` 打快照（`.snapshot/<stage>/`），失败可 `--rollback S<n>`
-- 阶段产物写入采用「临时文件 + 原子替换」，中断不会留下半成品
-- 外部依赖（联网检索、模板下载、LaTeX 编译）全部有降级路径，绝不硬失败
-- 幂等设计：同一阶段重复执行结果一致，可安全重试
-
-### 4. 可追溯审计
-
-`audit.jsonl` 每行一条事件，append-only：
-
-```json
-{"ts":"2026-08-19T10:22:31Z","stage":"S6","event":"auto_fix","target":"main.tex:L214",
- "detail":"补全缺失的 \\label{fig:3}","actor":"check_figures_tables","round":2}
-{"ts":"2026-08-19T10:22:40Z","stage":"S6","event":"gate_decision","gate":"G6",
- "result":"fail","reason":"2 unresolved errors","action":"retry","round":2}
-```
-
-事件类型：`stage_start` `stage_end` `gate_decision` `auto_fix` `degrade`
-`external_call` `rollback` `human_input` `error`。
-
-查看：`python scripts/run_pipeline.py --workdir runs/demo --show-audit`
-
-## 配置
-
-| 文件 | 作用 |
-|------|------|
-| [`config/pipeline.yaml`](config/pipeline.yaml) | 阶段编排、依赖、超时、重试 |
-| [`config/quality-gates.yaml`](config/quality-gates.yaml) | 门控阈值与失败动作 |
-| [`config/journals.yaml`](config/journals.yaml) | 期刊候选库（可扩充） |
-| [`config/style-rules.yaml`](config/style-rules.yaml) | 学术语言规则（时态/语态/禁用词） |
-
-调低质量门槛（比如先看看效果）：
-
-```yaml
-# config/quality-gates.yaml
-G3:
-  min_total_score: 5.5   # 默认 6.5
-```
-
-## 项目结构
-
-```
-.
-├── SKILL.md                  # Skill 入口（Agent 首先读这个）
-├── prompts/                  # 七阶段提示词 + 公共片段
-│   ├── 00-orchestrator.md    # 编排器（总控）
-│   ├── 01..07-*.md           # 各阶段提示词
-│   ├── shared/               # 角色前言、IO 契约、异常处理、术语表
-│   └── README.md             # 提示词衔接逻辑说明
-├── config/                   # 配置与 JSON Schema
-├── scripts/                  # 可执行工具层
-│   ├── ingest/               # 格式检测与解析
-│   ├── validate/             # 校验器（IR/引用/图表/公式/编译）
-│   ├── journals/             # 期刊匹配与模板获取
-│   ├── render/               # LaTeX / DOCX 渲染
-│   ├── report/               # 报告生成
-│   ├── audit/                # 审计日志
-│   └── run_pipeline.py       # CLI 编排入口
-├── assets/
-│   ├── templates/            # 内置模板骨架（降级兜底）
-│   └── checklists/           # 格式/引用/投稿清单
-├── references/               # 领域知识文档（按需加载）
-├── examples/                 # 输入输出示例
-├── tests/                    # pytest
-└── docs/architecture.md      # 架构、数据流、状态机
-```
-
-## 常见问题
-
-**Q：会编造参考文献吗？**
-不会。所有新增引用必须联网检索到真实 DOI 才写入 `.bib`，验证不通过的标
-`[[UNVERIFIED_REF]]` 留在正文并列入待补清单。`scripts/validate/check_citations.py --verify-doi`
-会强制拦截。
-
-**Q：影响因子准确吗？**
-`config/journals.yaml` 里的是带年份标注的快照，仅作候选池和 fallback。S4 会联网核实，
-报告中会标明「数据来源 + 采集时间」。投稿前请自行到期刊官网复核。
-
-**Q：Word 里的公式是图片，怎么办？**
-无法解析。会记录到 `gaps` 并在报告中列出位置，请提供 LaTeX 源或 OMML 公式。
-
-**Q：LaTeX 编译环境没装能用吗？**
-能。`latex_compile_check.py` 检测不到 `latexmk` 会跳过编译校验并标记为 `degrade`，
-其余校验正常执行，但报告会声明「未经编译验证」。
-
-**Q：跑一半中断了？**
-`--stage S<n>` 从任意阶段续跑，`--rollback S<n>` 回退到快照。产物写入是原子的，不会有半成品。
-
-**Q：能保证中稿吗？**
-不能，也不该有人这么承诺。它保证的是：体裁正确、格式合规、引用完整、缺陷透明。
-学术贡献本身取决于你的研究。
-
-## 路线图
-
-- [ ] 期刊库扩充到 500+（欢迎 PR，见 [贡献指南](CONTRIBUTING.md#扩充期刊库)）
-- [ ] Overleaf 项目直接导入/导出
-- [ ] 投稿信（cover letter）与回复审稿意见生成
-- [ ] 相似度自查（与已发表文献的表述重合度）
-- [ ] 多语言支持（英→中反向、日文期刊）
-
-## 贡献
-
-欢迎提 Issue 和 PR。扩充期刊库、补充期刊模板、改进提示词都是高价值贡献。
-请先读 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
-
-## 免责声明
-
-本项目是**写作与格式化辅助工具**，不替代研究工作本身。使用者对论文的学术诚信、数据真实性、
-署名合规性负全责。请勿用于伪造研究成果，或违反目标期刊 AI 使用政策的场景——
-多数期刊要求披露 AI 辅助写作，请如实声明。
-
-## 许可
-
-[MIT](LICENSE) © 2026
+如果这个 Skill 对你的论文转换、投稿前检查或审稿回复有帮助，欢迎点一个 **Star ⭐** 支持项目继续迭代。

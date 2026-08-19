@@ -1,18 +1,23 @@
 {
-  "schema_version": "2.0",
+  "schema_version": "2.1",
   "baseline_commit": "5156ceb46ab033f10d85cc64d5a73037a0be9e7f",
+  "extension_baseline_commit": "5bc5231c12c75f3a9c4dca506cf7f05301ebf32d",
   "legacy_skill_prefix": {
     "bytes": 9679,
     "sha256": "41a192c4480663eb899a612a299161958df6b5f8600b8476947b0dd0a56e2aa8"
   },
-  "purpose": "Compatibility regression guard for the original v1.0.0 math-modeling workflow. This is not a cryptographic security or anti-tamper guarantee.",
+  "purpose": "Compatibility regression guard for the original v1.0.0 math-modeling workflow plus reviewed-change governance for the post-v1.0 extension surface. This is not a cryptographic security or anti-tamper guarantee.",
   "policy": {
     "baseline_files_must_not_be_deleted": true,
     "baseline_file_changes_require_allowlist": true,
+    "extension_existing_file_changes_require_allowlist": true,
     "new_files_are_allowed": true,
     "skill_legacy_prefix_must_remain_byte_exact": true
   },
   "approved_bugfix_paths": [
+    "README.md",
+    "CHANGELOG.md",
+    "VERSION",
     "config/pipeline.yaml",
     "scripts/run_pipeline.py",
     "scripts/report.py",
@@ -20,11 +25,26 @@
     "prompts/README.md"
   ],
   "approved_bugfix_reasons": {
+    "README.md": "Synchronize public usage documentation with the real S8 readiness bridge, novice guidance, CLI/Agent boundary, canonical sample and conservative readiness statuses.",
+    "CHANGELOG.md": "Correct stale/nonexistent script and workflow claims and document the reviewed v1.2 readiness/audit iteration.",
+    "VERSION": "Advance the project release version to 1.2.0 while leaving the protected legacy SKILL.md frontmatter untouched.",
     "config/pipeline.yaml": "Fix invalid YAML syntax in recommendations[0] data-flow paths so the runtime can actually load the configuration.",
-    "scripts/run_pipeline.py": "Implement the quality gates already specified by v1.0.0; repair run modes, stage resume, --show-audit, --journal alias, and honest --no-ai-stub behavior.",
+    "scripts/run_pipeline.py": "Implement executable G1-G6 behavior and connect the logical post-S6 S8 readiness bridge before the final report without pretending Agent-only checks are deterministic.",
     "scripts/report.py": "Prevent demo/missing-validation runs from being mislabeled submission-ready and make the optional post-S6 readiness preflight authoritative when present.",
     "scripts/validate.py": "Align Finding output with validation.schema.json and correct PASS_WITH_WARNINGS verdict logic so G6 can evaluate real findings.",
-    "prompts/README.md": "Synchronize the prompt inventory with the additive SCI extension and its publication-readiness routing while preserving the legacy workflow."
+    "prompts/README.md": "Synchronize the prompt inventory with W/P/J, S8, novice guidance, bridge behavior and compatibility naming conventions."
+  },
+  "approved_extension_change_paths": [
+    "scripts/check_docs.py",
+    "scripts/readiness/run_readiness.py",
+    "docs/architecture.md",
+    "references/troubleshooting.md"
+  ],
+  "approved_extension_change_reasons": {
+    "scripts/check_docs.py": "Upgrade static consistency checking to validate every documented script path, prompt inventory and package-less compatibility CLI namespace.",
+    "scripts/readiness/run_readiness.py": "Remove unnecessary manual required parameters and resolve standard S1-S7 artifacts automatically through pipeline_bridge.",
+    "docs/architecture.md": "Document the reviewed S8 bridge, Agent/deterministic boundary and extension governance model.",
+    "references/troubleshooting.md": "Document network/evidence degradation and readiness bridge recovery paths."
   },
   "required_paths_without_git_history": [
     "SKILL.md",
@@ -77,6 +97,7 @@
     "config/schema/submission-preflight.schema.json",
     "scripts/gates.py",
     "scripts/check_docs.py",
+    "scripts/audit_repo.py",
     "scripts/readiness/__init__.py",
     "scripts/readiness/utils.py",
     "scripts/readiness/reference_verifier.py",
@@ -88,9 +109,14 @@
     "scripts/readiness/similarity_precheck.py",
     "scripts/readiness/template_fetch.py",
     "scripts/readiness/submission_preflight.py",
+    "scripts/readiness/pipeline_bridge.py",
     "scripts/readiness/run_readiness.py",
     "docs/architecture.md",
-    "references/troubleshooting.md"
+    "references/troubleshooting.md",
+    "tests/test_publication_readiness.py",
+    "tests/test_readiness_bridge.py",
+    "tests/test_cli_namespace.py",
+    "tests/test_repo_auditor.py"
   ],
   "protected_semantics": [
     "original math-modeling S1-S7 workflow remains available",
@@ -98,6 +124,8 @@
     "all original tables and table references must be preserved during conversion unless author-approved",
     "equations, symbols, definitions, constraints, numerical results, units and uncertainty must not be silently altered",
     "core conclusions and key scientific arguments must not be silently strengthened, weakened, removed or invented",
-    "missing evidence and unverified references must remain explicit rather than being fabricated"
+    "missing evidence and unverified references must remain explicit rather than being fabricated",
+    "Agent-only semantic/visual/reviewer checks must not be represented as deterministic PASS artifacts",
+    "READY_FOR_HUMAN_SUBMISSION_CHECK is the strongest automated readiness label and is not an acceptance guarantee"
   ]
 }

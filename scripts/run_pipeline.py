@@ -1,12 +1,16 @@
-"""run_pipeline.py — S1→S7 deterministic runtime with executable quality gates.
+"""run_pipeline.py — S1→S7 runtime with executable gates and S8 bridge.
 
-The CLI has two execution layers:
-- deterministic runtime: parsing, journal scoring, rendering, validation, reporting, gate enforcement;
-- agent-produced artifacts: S2 rewrite and S3 assessment.
+The CLI has three explicit execution layers:
+- deterministic S1/S4/S5/S6/S7 runtime + G1-G6 gate enforcement;
+- Agent-produced S2 rewrite and S3 assessment artifacts;
+- logical post-S6 S8 Publication Readiness checks before the final S7 report.
 
-For demos, ``--ai-stub`` (default) creates conservative S2/S3 placeholders.
-``--no-ai-stub`` never pretends to call an LLM: it requires real S2/S3 artifacts
-to already exist in the workdir, typically written by the Agent Skill prompts.
+For demos, ``--ai-stub`` (default) creates conservative S2/S3 placeholders and
+S8 is not auto-run. ``--no-ai-stub`` never pretends to call an LLM: it requires
+real S2/S3 artifacts already written by the Agent Skill. With real artifacts,
+``--readiness auto`` attempts deterministic S8 checks and lets the final report
+surface unresolved blockers; ``--readiness required`` returns non-zero unless
+the preflight reaches READY_FOR_HUMAN_SUBMISSION_CHECK.
 """
 from __future__ import annotations
 
@@ -24,10 +28,12 @@ import common
 from audit import AuditLogger
 from gates import GateEvaluator
 import ingest, journals, render, validate, report
+from readiness.pipeline_bridge import run_from_workdir as run_readiness_from_workdir
 
 STAGES = ["S1", "S2", "S3", "S4", "S5", "S6", "S7"]
 GATE_BY_STAGE = {f"S{i}": f"G{i}" for i in range(1, 7)}
 PIPELINE_YAML = common.repo_path("config", "pipeline.yaml")
+READY_STATUS = "READY_FOR_HUMAN_SUBMISSION_CHECK"
 
 
 def probe_env() -> dict:
@@ -82,7 +88,7 @@ def ai_stub_s2(ir_path: str, workdir: str) -> str:
     ir = common.load_json(ir_path)
     ir["provenance"]["stage"] = "S2"
     ir["provenance"]["upstream_sha256"] = common.sha256_of(ir_path)
-    ir["provenance"]["parser"] = "cli-demo-stub@1.1.0"
+    ir["provenance"]["parser"] = "cli-demo-stub@1.2.0"
     ir["rewrite_log"] = [{
         "source_ref": "ALL",
         "target_ref": "ALL",
@@ -226,22 +232,87 @@ def _report_gate(result: dict) -> None:
         print(f"  WARN  {item['id']} {item['check']}: {item['detail']}")
 
 
+def _run_s8_if_requested(args, logger: AuditLogger) -> tuple[str | None, str | None]:
+    """Run the deterministic readiness bridge before S7 and return status/error."""
+    if args.readiness == "off":
+        logger.log("skip", "S8", result="skipped", detail="--readiness off")
+        return None, None
+
+    if args.ai_stub:
+        detail = "S8 auto-run skipped because S2/S3 are demo stubs, not real Agent artifacts"
+        logger.log("degrade", "S8", result="demo_only", detail=detail)
+        if args.readiness == "required":
+            return None, detail
+        return None, None
+
+    validation_path = os.path.join(args.workdir, "06-validate", "validation-final.json")
+    if not os.path.isfile(validation_path):
+        detail = "S8 requires completed S6 validation-final.json"
+        logger.log("skip", "S8", result="missing_prerequisite", detail=detail)
+        if args.readiness == "required":
+            return None, detail
+        return None, None
+
+    print("\n[S8] Publication Readiness — resolving S1-S7 artifacts automatically")
+    try:
+        preflight = run_readiness_from_workdir(
+            args.workdir,
+            target_journal=args.target_journal,
+            with_similarity_precheck=args.similarity_precheck,
+        )
+    except Exception as exc:
+        detail = f"S8 readiness bridge failed: {exc}"
+        logger.log("error", "S8", result="failed", detail=detail)
+        return None, detail if args.readiness == "required" else None
+
+    status = preflight.get("status")
+    logger.log(
+        "stage_end",
+        "S8",
+        result=status,
+        artifacts=[{"path": os.path.join(args.workdir, "08-readiness", "submission-preflight.json")}],
+        detail=(
+            "Deterministic S8 bridge ran. Agent-only semantic citation support, visual "
+            "scientific review and Reviewer Simulator remain required where absent."
+        ),
+    )
+    print(f"[S8] preflight={status}")
+    if args.readiness == "required" and status != READY_STATUS:
+        return status, f"S8 required but preflight={status}"
+    return status, None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="math-modeling-to-sci-skill pipeline")
-    ap.add_argument("--input", help="input manuscript (.docx/.tex/.md); required when S1 runs")
+    ap.add_argument("--input", help="input manuscript (.docx/.tex/.zip/.md); required when S1 runs")
     ap.add_argument("--workdir", default="runs/demo")
     ap.add_argument("--mode", choices=["auto", "interactive", "dry-run"], default="auto")
-    ap.add_argument("--stage", default="S1", choices=STAGES, help="first stage to run")
-    ap.add_argument("--stop-after", choices=STAGES, default=None, help="last stage to run")
+    ap.add_argument("--stage", default="S1", choices=STAGES, help="first legacy stage to run")
+    ap.add_argument("--stop-after", choices=STAGES, default=None, help="last legacy stage to run")
     ap.add_argument("--target-journal", "--journal", dest="target_journal", default=None)
     ap.add_argument("--scope-tags", default="", help="comma-separated scope tags")
     ap.add_argument("--method-tags", default="", help="comma-separated method tags")
     ap.add_argument("--score", type=float, default=6.5, help="S3 demo score used only by --ai-stub")
+    ap.add_argument(
+        "--readiness",
+        choices=["auto", "required", "off"],
+        default="auto",
+        help=(
+            "post-S6 S8 behavior: auto=run deterministic readiness before S7 with real Agent "
+            "artifacts, required=also fail unless preflight is READY_FOR_HUMAN_SUBMISSION_CHECK, "
+            "off=skip S8"
+        ),
+    )
+    ap.add_argument(
+        "--similarity-precheck",
+        action="store_true",
+        help="include advisory Semantic Scholar similarity discovery during S8 (not Turnitin/iThenticate)",
+    )
     ai = ap.add_mutually_exclusive_group()
     ai.add_argument("--ai-stub", dest="ai_stub", action="store_true",
                     help="generate demo-only S2/S3 placeholders (default)")
     ai.add_argument("--no-ai-stub", dest="ai_stub", action="store_false",
-                    help="consume real S2/S3 artifacts already present in workdir")
+                    help="consume real S2/S3 artifacts already present in workdir; does not call an LLM")
     ap.set_defaults(ai_stub=True)
     ap.add_argument("--probe-env", action="store_true", help="probe environment and exit")
     ap.add_argument("--show-audit", action="store_true", help="print workdir/audit.jsonl and exit")
@@ -281,6 +352,7 @@ def main() -> int:
         **probe_env(),
         "mode": args.mode,
         "ai_stub": args.ai_stub,
+        "readiness": args.readiness,
         "pipeline_config_version": (pipeline_cfg.get("pipeline") or {}).get("version"),
     })
     if args.ai_stub:
@@ -308,6 +380,7 @@ def main() -> int:
 
     blocked = False
     block_detail = None
+    readiness_status = None
 
     for idx in range(start, stop + 1):
         stage = STAGES[idx]
@@ -380,7 +453,13 @@ def main() -> int:
                 )
 
             elif stage == "S7":
-                report.run(args.workdir)
+                readiness_status, readiness_error = _run_s8_if_requested(args, logger)
+                if readiness_error:
+                    blocked = True
+                    block_detail = readiness_error
+                    logger.log("run_end", "S8", result="blocked", detail=readiness_error)
+                else:
+                    report.run(args.workdir)
 
             gate_id = GATE_BY_STAGE.get(stage)
             if not gate_id:
@@ -473,6 +552,8 @@ def main() -> int:
     print(f"   workdir: {args.workdir}")
     if stop >= STAGES.index("S7"):
         print(f"   report: {os.path.join(args.workdir, 'conversion-report.md')}")
+        if readiness_status:
+            print(f"   S8 preflight: {readiness_status}")
     if args.ai_stub:
         print("   NOTE: --ai-stub was used; this run is DEMO ONLY, not a real submission-ready assessment.")
     return 0

@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Static repository consistency checks for documented/configured paths.
-
-This catches the class of failure where README/SKILL/pipeline configuration
-references commands or resources that do not exist in the repository.
-"""
+"""Static repository consistency checks for docs, prompts and CLI shims."""
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common  # noqa: E402
 
 ROOT = Path(common.REPO_ROOT)
+SCRIPT_REF_RE = re.compile(r"(?<![\w.-])(scripts/[A-Za-z0-9_./-]+\.py)")
+COMPAT_DIRS = ("ingest", "journals", "render", "validate")
 
 
 def exists(rel: str) -> bool:
@@ -58,6 +57,7 @@ def main() -> int:
         "config/schema/submission-preflight.schema.json",
         "scripts/gates.py",
         "scripts/check_preservation.py",
+        "scripts/audit_repo.py",
         "scripts/readiness/__init__.py",
         "scripts/readiness/utils.py",
         "scripts/readiness/reference_verifier.py",
@@ -69,6 +69,7 @@ def main() -> int:
         "scripts/readiness/similarity_precheck.py",
         "scripts/readiness/template_fetch.py",
         "scripts/readiness/submission_preflight.py",
+        "scripts/readiness/pipeline_bridge.py",
         "scripts/readiness/run_readiness.py",
         ".github/workflows/ci.yml",
         ".github/workflows/validate-skill.yml",
@@ -77,17 +78,44 @@ def main() -> int:
         if not exists(rel):
             errors.append(f"missing required repository path: {rel}")
 
-    text_files = ["SKILL.md", "README.md", "CONTRIBUTING.md", "CHANGELOG.md"]
-    known_bad = ["scripts/ingest/parse_word.py"]
-    for rel in text_files:
-        p = ROOT / rel
-        if not p.exists():
-            errors.append(f"missing documentation file: {rel}")
+    # Every concrete scripts/foo.py path in Markdown must resolve. Illustrative
+    # placeholders such as scripts/.../...py are intentionally ignored.
+    for p in ROOT.rglob("*.md"):
+        if any(part in {".git", "runs"} for part in p.parts):
             continue
-        text = p.read_text(encoding="utf-8")
-        for bad in known_bad:
-            if bad in text:
-                errors.append(f"{rel}: references deprecated/nonexistent path {bad}")
+        body = p.read_text(encoding="utf-8", errors="replace")
+        for ref in SCRIPT_REF_RE.findall(body):
+            if "..." in ref:
+                continue
+            if not exists(ref):
+                errors.append(f"{p.relative_to(ROOT)}: references nonexistent script {ref}")
+
+    prompt_readme = (ROOT / "prompts" / "README.md").read_text(encoding="utf-8")
+    for p in (ROOT / "prompts").rglob("*.md"):
+        if p.name == "README.md":
+            continue
+        if p.name not in prompt_readme:
+            errors.append(f"prompts/README.md does not list {p.relative_to(ROOT / 'prompts')}")
+
+    for name in COMPAT_DIRS:
+        flat = ROOT / "scripts" / f"{name}.py"
+        shim = ROOT / "scripts" / name
+        if not flat.is_file() or not shim.is_dir():
+            errors.append(f"compatibility layout incomplete for scripts/{name}")
+        if (shim / "__init__.py").exists():
+            errors.append(
+                f"scripts/{name}/ must remain package-less; __init__.py would shadow scripts/{name}.py"
+            )
+
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    if "--readiness" not in readme:
+        errors.append("README.md does not document the S8 --readiness path")
+    if "examples/input/sample-modeling-report.tex" not in readme:
+        errors.append("README.md does not use the canonical sample-modeling-report.tex")
+
+    legacy_alias = (ROOT / "examples" / "input" / "sample-model-report.tex").read_text(encoding="utf-8")
+    if "COMPATIBILITY ALIAS" not in legacy_alias:
+        errors.append("legacy sample-model-report.tex is not explicitly labelled as a compatibility alias")
 
     if errors:
         print("DOCUMENTATION / CONFIG CONSISTENCY: FAIL")
@@ -98,6 +126,9 @@ def main() -> int:
     print("DOCUMENTATION / CONFIG CONSISTENCY: PASS")
     print(f"- configured stages checked: {len(pipeline.get('stages', []))}")
     print(f"- explicit required paths checked: {len(required)}")
+    print("- markdown script references resolved")
+    print("- prompt inventory synchronized")
+    print("- compatibility CLI directories are package-less")
     return 0
 
 
