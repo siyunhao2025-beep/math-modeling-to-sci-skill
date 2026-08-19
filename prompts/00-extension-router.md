@@ -25,6 +25,20 @@ For W/P/J/S8 always also load:
 
 Load `shared/io-contract.md` when the task produces/consumes structured manuscript artifacts.
 
+## User-guidance route
+
+Load `shared/06-user-guidance-playbook.md` when any of these applies:
+
+- the user uploads Word/LaTeX/LaTeX-project content but does not know what to ask;
+- the user asks “怎么提问 / 下一步怎么做 / 怎么使用这个 Skill”; 
+- the user replies only “继续 / 下一步 / 按你建议来”; 
+- a stage has just completed and a concrete next-step prompt would help;
+- the user asks for a full workflow without knowing the S1–S8 terminology.
+
+For an ambiguous fresh upload, default to a **read-only intake/diagnostic pass** before changing manuscript content. After each completed stage, give one recommended next action and one directly copyable prompt. If the user says only “继续/下一步”, infer the next valid stage from completed artifacts rather than forcing them to restate a technical command.
+
+If the user explicitly chooses “完整流程 / 全自动”, continue through the valid chain until a genuine author decision, missing-evidence blocker, target-journal decision, or verification requirement needs input. Do not repeatedly ask them to copy the example prompts.
+
 ## Mixed tasks
 
 When the user asks for several operations, use the minimum necessary chain:
