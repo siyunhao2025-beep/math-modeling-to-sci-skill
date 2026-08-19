@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compatibility CLI for LaTeX / LaTeX-project parsing."""
+"""Compatibility CLI for LaTeX / zipped LaTeX-project parsing."""
 from __future__ import annotations
 
 import argparse
@@ -15,10 +15,15 @@ def main() -> int:
     ap.add_argument("--input", required=True)
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
-    ingest = load_flat_module("ingest")
     workdir = workdir_from_output(args.out, "01-parse")
-    fmt = "latex-project" if args.input.lower().endswith(".zip") else "latex"
-    produced = ingest.run(args.input, workdir, source_format=fmt)
+
+    if args.input.lower().endswith(".zip"):
+        import project_ingest
+        produced = project_ingest.run(args.input, workdir)
+    else:
+        ingest = load_flat_module("ingest")
+        produced = ingest.run(args.input, workdir, source_format="latex")
+
     copy_if_needed(produced, args.out)
     print(args.out)
     return 0
