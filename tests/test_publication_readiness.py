@@ -20,6 +20,28 @@ def dump(path: Path, data):
     path.write_text(json.dumps(data), encoding="utf-8")
 
 
+def clear_required_artifacts(wd: Path):
+    dump(wd / "06-validate/validation-final.json", {
+        "summary": {"error_count": 0, "unresolved_error_ids": []},
+        "checkers": [],
+    })
+    dump(wd / "08-readiness/reference-verification.json", {"blockers": []})
+    dump(wd / "08-readiness/citation-support-audit.json", {"citations": [], "blockers": []})
+    dump(wd / "08-readiness/journal-fit.json", {
+        "blockers": [],
+        "baseline_fit_score_0_100": 90,
+        "agent_semantic_review": {"decision": "STRONG_FIT"},
+    })
+    dump(wd / "08-readiness/claim-evidence-audit.json", {"blockers": [], "claims": []})
+    dump(wd / "08-readiness/figure-table-audit.json", {"blockers": [], "visual_scientific_review": "PASS"})
+    dump(wd / "08-readiness/compliance-audit.json", {"blockers": [], "recommended_reporting_guidelines": []})
+    dump(wd / "08-readiness/reviewer-simulation.json", {"comments": [
+        {"id": "RS-1", "severity": "major", "status": "RESOLVED"},
+        {"id": "RS-2", "severity": "major", "status": "RESOLVED"},
+        {"id": "RS-3", "severity": "minor", "status": "RESOLVED"},
+    ]})
+
+
 def test_normalize_doi():
     assert normalize_doi("https://doi.org/10.1234/ABC.5") == "10.1234/ABC.5"
     assert normalize_doi("doi: 10.1000/xyz123.") == "10.1000/xyz123"
@@ -55,25 +77,34 @@ def test_compliance_flags_missing_human_ethics(tmp_path):
 
 def test_preflight_can_reach_human_check_when_all_required_artifacts_clear(tmp_path):
     wd = tmp_path / "run"
-    dump(wd / "06-validate/validation-final.json", {
-        "summary": {"error_count": 0, "unresolved_error_ids": []},
-        "checkers": [{"name": "latex_compile_check", "status": "pass", "findings": []}],
-    })
-    dump(wd / "08-readiness/reference-verification.json", {"blockers": []})
-    dump(wd / "08-readiness/journal-fit.json", {"blockers": [], "baseline_fit_score_0_100": 90})
-    dump(wd / "08-readiness/claim-evidence-audit.json", {"blockers": [], "claims": []})
-    dump(wd / "08-readiness/figure-table-audit.json", {"blockers": [], "visual_scientific_review": "PASS"})
-    dump(wd / "08-readiness/compliance-audit.json", {"blockers": [], "recommended_reporting_guidelines": []})
-    dump(wd / "08-readiness/reviewer-simulation.json", {"comments": [
-        {"id": "RS-1", "severity": "major", "status": "RESOLVED"},
-        {"id": "RS-2", "severity": "major", "status": "RESOLVED"},
-        {"id": "RS-3", "severity": "minor", "status": "RESOLVED"},
-    ]})
-    dump(wd / "08-readiness/citation-support-audit.json", {"citations": [], "blockers": []})
+    clear_required_artifacts(wd)
     out = wd / "08-readiness/submission-preflight.json"
     result = preflight_run(str(wd), str(out))
     assert result["status"] == "READY_FOR_HUMAN_SUBMISSION_CHECK"
     assert result["blockers"] == []
+
+
+def test_preflight_requires_contextual_citation_audit(tmp_path):
+    wd = tmp_path / "run"
+    clear_required_artifacts(wd)
+    (wd / "08-readiness/citation-support-audit.json").unlink()
+    out = wd / "08-readiness/submission-preflight.json"
+    result = preflight_run(str(wd), str(out))
+    assert result["status"] == "BLOCKED"
+    assert any(x["area"] == "citation_support" and x["code"] == "ARTIFACT_MISSING" for x in result["blockers"])
+
+
+def test_latex_build_requires_real_compile_and_official_template_provenance(tmp_path):
+    wd = tmp_path / "run"
+    clear_required_artifacts(wd)
+    tex = wd / "05-template/build/main.tex"
+    tex.parent.mkdir(parents=True, exist_ok=True)
+    tex.write_text("\\documentclass{article}\\begin{document}x\\end{document}", encoding="utf-8")
+    out = wd / "08-readiness/submission-preflight.json"
+    result = preflight_run(str(wd), str(out))
+    codes = {x["code"] for x in result["blockers"]}
+    assert "LATEX_NOT_COMPILED" in codes
+    assert "OFFICIAL_TEMPLATE_PROVENANCE" in codes
 
 
 def test_preflight_blocks_missing_artifacts(tmp_path):
