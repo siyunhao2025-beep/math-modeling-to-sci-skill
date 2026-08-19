@@ -11,7 +11,7 @@ readiness_levels:
 
 hard_blockers:
   - unverified_or_conflicting_references
-  - citation_support_contradiction
+  - citation_support_missing_or_contradictory
   - unsupported_high_risk_claims
   - missing_or_unmapped_figures_tables
   - official_scope_not_verified
@@ -29,6 +29,12 @@ reference_verification:
   strict_clean_bib: true
   allow_author_confirmed_without_api: false
   title_similarity_warning_below: 0.72
+
+citation_support:
+  required_for_human_submission_check: true
+  contradiction_is_blocker: true
+  does_not_support_is_blocker: true
+  cannot_verify_requires_author_action: true
 
 journal_fit:
   recent_months: 12
@@ -120,13 +126,16 @@ preflight:
   required_artifacts:
     - 06-validate/validation-final.json
     - 08-readiness/reference-verification.json
+    - 08-readiness/citation-support-audit.json
     - 08-readiness/journal-fit.json
     - 08-readiness/claim-evidence-audit.json
     - 08-readiness/figure-table-audit.json
     - 08-readiness/compliance-audit.json
     - 08-readiness/reviewer-simulation.json
+  conditional_artifacts:
+    latex:
+      - 08-readiness/latex-compile.json
+      - 08-readiness/template-provenance.json
   optional_artifacts:
-    - 08-readiness/citation-support-audit.json
     - 08-readiness/language-audit.json
     - 08-readiness/similarity-precheck.json
-    - 08-readiness/template-provenance.json
