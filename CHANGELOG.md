@@ -32,7 +32,7 @@
 - 防止 S8 功能存在但主流程完全无法到达。
 - 防止 `scripts/ingest.py` 与 `scripts/ingest/` 等兼容路径被误改成同名 import package。
 - 修复 prompt README 未登记 `06-user-guidance-playbook.md` 的漂移。
-- 修复旧 Changelog 将实际 `scripts/audit.py` 错写成 `scripts/audit/logger.py` 的问题。
+- 修复旧 Changelog 曾把实际 `scripts/audit.py` 误写成一个并不存在的 `audit/logger.py` 子路径的问题。
 - 移除旧 Changelog 中对未存在 `release.yml` / Dependabot 配置的过度声明；当前 CI 以 `.github/workflows/ci.yml` 和 `.github/workflows/validate-skill.yml` 为准。
 
 ## [1.1.0] - 2026-08-19
