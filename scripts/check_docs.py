@@ -51,6 +51,7 @@ def main() -> int:
         "prompts/17-submission-preflight.md",
         "prompts/18-methods-reporting-ethics.md",
         "prompts/shared/05-integrity-preservation.md",
+        "prompts/shared/06-user-guidance-playbook.md",
         "config/publication-readiness.yaml",
         "config/schema/reviewer-simulation.schema.json",
         "config/schema/citation-support-audit.schema.json",
