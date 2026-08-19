@@ -15,8 +15,19 @@ def _read(workdir, *parts):
     return None
 
 
-def _run_state(audit_events: list[dict], assessment: dict | None, validation: dict | None) -> tuple[str, list[str]]:
-    """Return a conservative manuscript status and the reasons behind it."""
+def _run_state(
+    audit_events: list[dict],
+    assessment: dict | None,
+    validation: dict | None,
+    preflight: dict | None,
+) -> tuple[str, list[str]]:
+    """Return a conservative manuscript status and the reasons behind it.
+
+    S6 is necessary but no longer sufficient for the strongest readiness label.
+    If the post-S6 Publication Readiness Suite was run, its preflight is
+    authoritative. If it was not run, the report says so rather than silently
+    upgrading an S6 pass to full submission readiness.
+    """
     reasons: list[str] = []
     blocked = any(e.get("result") == "blocked" for e in audit_events)
     demo_only = any(e.get("result") == "demo_only" for e in audit_events)
@@ -44,7 +55,20 @@ def _run_state(audit_events: list[dict], assessment: dict | None, validation: di
         return "DEMO_ONLY_NOT_SUBMISSION_READY", reasons
     if reasons:
         return "DRAFT_WITH_BLOCKERS", reasons
-    return "SUBMISSION_READY", []
+
+    if preflight is None:
+        return "S6_PASSED_S8_NOT_RUN", [
+            "S6 passed, but the post-S6 Publication Readiness Suite has not produced submission-preflight.json"
+        ]
+
+    pstatus = preflight.get("status")
+    if pstatus == "READY_FOR_HUMAN_SUBMISSION_CHECK":
+        return pstatus, []
+    if pstatus == "AUTHOR_ACTION_REQUIRED":
+        return pstatus, ["S8 preflight contains unresolved warnings/author actions"]
+    if pstatus == "BLOCKED":
+        return "DRAFT_WITH_BLOCKERS", ["S8 preflight is BLOCKED"]
+    return "DRAFT_WITH_BLOCKERS", [f"S8 preflight status is missing or invalid: {pstatus}"]
 
 
 def run(workdir: str) -> str:
@@ -55,9 +79,10 @@ def run(workdir: str) -> str:
     jm = _read(workdir, "04-journals", "journal-match.json")
     manifest = _read(workdir, "05-template", "MANIFEST.json")
     validation = _read(workdir, "06-validate", "validation-final.json")
+    preflight = _read(workdir, "08-readiness", "submission-preflight.json")
     audit_events = logger.read_all()
 
-    status, status_reasons = _run_state(audit_events, assessment, validation)
+    status, status_reasons = _run_state(audit_events, assessment, validation, preflight)
     err_count = (validation or {}).get("summary", {}).get("error_count")
     if not isinstance(err_count, int):
         err_count = None
@@ -71,9 +96,9 @@ def run(workdir: str) -> str:
     md.append("# 转换报告 · Conversion Report\n")
     md.append(f"> 生成时间：{audit_events[-1]['at'] if audit_events else 'n/a'}\n")
 
-    if status != "SUBMISSION_READY":
+    if status != "READY_FOR_HUMAN_SUBMISSION_CHECK":
         md.append("## ⛔ 状态说明\n")
-        md.append(f"**{status}** — 本文件不得被解释为已通过投稿前质量门控。\n")
+        md.append(f"**{status}** — 本文件不得被解释为已通过完整投稿前总审查。\n")
         for reason in status_reasons:
             md.append(f"- {reason}")
         md.append("")
@@ -91,7 +116,8 @@ def run(workdir: str) -> str:
         f"| 待补项 | {len(gaps)} 项（其中需作者决策 "
         f"{sum(1 for g in gaps if g.get('severity') in ('blocker','high'))} 项）|"
     )
-    md.append(f"| 残留错误 | {err_count if err_count is not None else 'n/a'} |")
+    md.append(f"| S6 残留错误 | {err_count if err_count is not None else 'n/a'} |")
+    md.append(f"| S8 preflight | {(preflight or {}).get('status', 'NOT_RUN')} |")
     md.append("")
 
     md.append("## 1. 执行概览\n")
@@ -167,7 +193,7 @@ def run(workdir: str) -> str:
             f"（{manifest.get('template_source')}）"
         )
         if not manifest.get("is_official_template"):
-            md.append("> ⚠️ 非官方模板：投稿前必须下载期刊官方模板并重新核对格式。")
+            md.append("> ⚠️ Legacy S5 使用非官方模板时，S8 必须提供 current official template provenance。")
         md.append(
             f"- 文档类：`{manifest.get('document_class')}` · "
             f"参考文献样式：`{manifest.get('bib_style')}`"
@@ -189,10 +215,23 @@ def run(workdir: str) -> str:
             for cid in summ.get("unresolved_error_ids", []):
                 md.append(f"- `{cid}`")
     else:
-        md.append("- 未运行校验；因此不能标记为 SUBMISSION_READY。")
+        md.append("- 未运行校验。")
     md.append("")
 
-    md.append("## 8. 待作者补充清单（Action Items）\n")
+    md.append("## 8. Publication Readiness（S8）\n")
+    if preflight:
+        md.append(f"- Preflight：**{preflight.get('status')}**")
+        md.append(f"- Blockers：{len(preflight.get('blockers', []))}")
+        md.append(f"- Warnings：{len(preflight.get('warnings', []))}")
+        for item in preflight.get("blockers", [])[:20]:
+            md.append(f"  - `{item.get('code')}` ({item.get('area')}): {item.get('detail')}")
+        for item in preflight.get("warnings", [])[:20]:
+            md.append(f"  - ⚠ `{item.get('code')}` ({item.get('area')}): {item.get('detail')}")
+    else:
+        md.append("- 未运行 S8：真实引用层、深度期刊 fit、Claim–Evidence、图表科学审查、Reviewer Simulator 与投稿前总审查尚未完成。")
+    md.append("")
+
+    md.append("## 9. 待作者补充清单（Action Items）\n")
     if gaps:
         md.append("| ID | 严重度 | 类别 | 位置 | 缺什么 |")
         md.append("|---|---|---|---|---|")
@@ -205,19 +244,22 @@ def run(workdir: str) -> str:
         md.append("- 无登记的内容缺口；这不等于研究内容已被证明完整。")
     md.append("")
 
-    md.append("## 9. 投稿前检查表\n")
+    md.append("## 10. 投稿前检查表\n")
     md.append("- [ ] 已使用真实 S2/S3 产物，而非 CLI demo stub")
-    md.append("- [ ] G1–G6 实际执行并通过，或所有降级/阻塞项均已处理")
-    md.append("- [ ] 已替换为目标期刊当前官方模板")
-    md.append("- [ ] 期刊时效信息已从官方来源重新核验")
-    md.append("- [ ] 参考文献、图表、公式、数值和正文双向一致")
-    md.append("- [ ] 所有 `[[MISSING]]` / `[[UNVERIFIED_REF]]` 已妥善处理")
+    md.append("- [ ] G1–G6 实际执行并通过")
+    md.append("- [ ] S8 reference verification / citation-support audit 通过")
+    md.append("- [ ] S8 deep journal fit + article type 已用当前官方证据核验")
+    md.append("- [ ] Claim–Evidence / figure-table / methods-ethics audits 已完成")
+    md.append("- [ ] Reviewer Simulator 的 blocker/major comment 已解决或作者明确决策")
+    md.append("- [ ] LaTeX 已编译且 current official template provenance 可追溯")
+    md.append("- [ ] 所有 `[[MISSING]]` / `[[UNVERIFIED_REF]]` / `[[AUTHOR_CHECK]]` 已妥善处理")
     md.append("- [ ] Cover letter / 声明 / 数据与代码可用性材料齐备")
     md.append("")
 
-    md.append("## 10. 审计摘要\n")
+    md.append("## 11. 审计摘要\n")
     md.append(f"- 关键事件计数：retry={retries}, degrade={degrades}, block={blocks}")
-    md.append("- 状态由实际产物和 audit.jsonl 保守推导；CLI demo 不会被标记为可投稿。")
+    md.append("- S6 负责运行时质量门控；S8 负责投稿层面的引用、fit、证据、审稿人视角与总审查。")
+    md.append("- 最强自动状态为 READY_FOR_HUMAN_SUBMISSION_CHECK，不构成录用保证。")
     md.append("")
 
     out = os.path.join(workdir, "conversion-report.md")
