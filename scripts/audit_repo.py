@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
-import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_REF_RE = re.compile(r"(?<![\w.-])(scripts/[A-Za-z0-9_./-]+\.py)")
@@ -44,6 +43,8 @@ def markdown_script_refs() -> list[tuple[str, str]]:
             continue
         body = p.read_text(encoding="utf-8", errors="replace")
         for ref in SCRIPT_REF_RE.findall(body):
+            if "..." in ref:  # illustrative placeholder, not a concrete command path
+                continue
             refs.append((str(p.relative_to(ROOT)), ref))
     return refs
 
@@ -56,13 +57,12 @@ def audit() -> list[dict]:
     prompt_readme = text("prompts/README.md")
     changelog = text("CHANGELOG.md")
     router = text("prompts/00-extension-router.md")
-    skill = text("SKILL.md")
     manifest = json.loads(text("config/preservation-manifest.json") or "{}")
 
     # V2-F1 — S8 must be reachable from the main runtime and user docs.
     ok = all(x in runner for x in ("run_readiness_from_workdir", "--readiness", "[S8]")) and "--readiness" in readme
     out.append(result("V2-F1", ok,
-        "run_pipeline.py must import/call readiness bridge; README must document --readiness",
+        "run_pipeline.py imports/calls readiness bridge; README documents --readiness",
         "Without this, publication-readiness is an orphan feature.",
         "Wire pipeline_bridge into S7 pre-report execution and document it."))
 
@@ -80,7 +80,7 @@ def audit() -> list[dict]:
         "A same-name importable package could shadow the canonical flat runtime module.",
         "Keep shim directories package-less or rename them; add namespace regression tests."))
 
-    # V1-F1 — every documented scripts/*.py reference must exist.
+    # V1-F1 — every concrete documented scripts/*.py reference must exist.
     bad_refs = [(src, ref) for src, ref in markdown_script_refs() if not exists(ref)]
     out.append(result("V1-F1", not bad_refs, f"missing documented script refs={bad_refs[:10]}",
         "Copy-paste commands would fail with No such file.",
@@ -89,13 +89,13 @@ def audit() -> list[dict]:
     # V1-F2 — canonical example + explicitly-labelled legacy alias.
     alias = text("examples/input/sample-model-report.tex")
     ok = exists("examples/input/sample-modeling-report.tex") and exists("examples/input/sample-model-report.tex") and "COMPATIBILITY ALIAS" in alias
-    out.append(result("V1-F2", ok, "canonical sample-modeling-report.tex + labelled legacy alias", 
+    out.append(result("V1-F2", ok, "canonical sample-modeling-report.tex + labelled legacy alias",
         "Two unexplained near-identical filenames confuse users and tests.",
         "Keep the legacy path only as an explicit compatibility alias; use canonical name in new docs."))
 
     # V1-F3 — executable quality-gate path + runtime regression test.
     ok = "GateEvaluator" in runner and ".evaluate(gate_id)" in runner and exists("tests/test_runtime_gates.py")
-    out.append(result("V1-F3", ok, "GateEvaluator.evaluate + test_runtime_gates.py", 
+    out.append(result("V1-F3", ok, "GateEvaluator.evaluate + test_runtime_gates.py",
         "A decorative gate lets failed science/validation flow into output.",
         "Evaluate G1-G6 and stop/retry/degrade according to configuration."))
 
@@ -130,7 +130,7 @@ def audit() -> list[dict]:
     # V2-F6 — preservation wording and legacy sample must be explicitly non-security/compatibility.
     guard = text("scripts/check_preservation.py")
     ok = "not an anti-tamper" in guard and "COMPATIBILITY ALIAS" in alias
-    out.append(result("V2-F6", ok, "regression guard disclaimer + labelled compatibility sample", 
+    out.append(result("V2-F6", ok, "regression guard disclaimer + labelled compatibility sample",
         "Security-like wording or unexplained duplicate samples create false confidence/confusion.",
         "Use compatibility-regression terminology and label the legacy example."))
 
@@ -147,13 +147,14 @@ def audit() -> list[dict]:
 
     # V1-F5 — known architecture/troubleshooting references must resolve.
     ok = exists("docs/architecture.md") and exists("references/troubleshooting.md")
-    out.append(result("V1-F5", ok, "docs/architecture.md and references/troubleshooting.md", 
+    out.append(result("V1-F5", ok, "docs/architecture.md and references/troubleshooting.md",
         "Dead links break the documented recovery path.",
         "Restore referenced docs or remove stale references."))
 
     # V1-F6 — extensions must be routed and capability boundaries explicit.
-    ok = all(token in router for token in ("08-sci-writing.md", "09-language-polish.md", "10-submission-journal-search.md", "11-publication-readiness-orchestrator.md")) and "do **not** claim" in router
-    out.append(result("V1-F6", ok, "extension router covers W/P/J/S8 and states truthfulness boundary", 
+    normalized_router = router.replace("**", "").lower()
+    ok = all(token in router for token in ("08-sci-writing.md", "09-language-polish.md", "10-submission-journal-search.md", "11-publication-readiness-orchestrator.md")) and "do not claim" in normalized_router
+    out.append(result("V1-F6", ok, "extension router covers W/P/J/S8 and states truthfulness boundary",
         "Prompt-only features can be mistaken for deterministic executed checks.",
         "Route every extension and explicitly distinguish Agent-only from runtime checks."))
 
@@ -162,38 +163,38 @@ def audit() -> list[dict]:
     ext_approved = set(manifest.get("approved_extension_change_paths", []))
     ext_reasons = set((manifest.get("approved_extension_change_reasons") or {}).keys())
     ok = bool(ext_base) and ext_approved <= ext_reasons and "extension_baseline_commit" in text("scripts/check_preservation.py")
-    out.append(result("V1-F7", ok, f"extension baseline={ext_base}; reviewed extension changes={len(ext_approved)}", 
+    out.append(result("V1-F7", ok, f"extension baseline={ext_base}; reviewed extension changes={len(ext_approved)}",
         "Presence-only extension checks allow safety/readiness behavior to weaken without a regression signal.",
         "Compare governed extension paths against a fixed prior commit and require reviewed reasons for changes."))
 
     # V1-F8 — real mode must be artifact-consumer, not a fake LLM toggle.
     ok = "real S2 artifact" in runner and "does not call an LLM" in runner and "--no-ai-stub" in runner
-    out.append(result("V1-F8", ok, "--no-ai-stub explicitly consumes real Agent artifacts", 
+    out.append(result("V1-F8", ok, "--no-ai-stub explicitly consumes real Agent artifacts",
         "A misleading production toggle can crash downstream or imply nonexistent AI integration.",
         "Require pre-existing real Agent artifacts and document the boundary."))
 
     # V1-F9 — deliberate identifier mismatch must be documented, not silently changed.
     ok = "math-modeling-to-sci-skill" in readme and "math-modeling-to-sci`" in readme and "Skill 标识" in readme
-    out.append(result("V1-F9", ok, "README documents repository/distribution name vs Skill identifier", 
+    out.append(result("V1-F9", ok, "README documents repository/distribution name vs Skill identifier",
         "Unexplained name mismatch confuses installation and invocation.",
         "Document the intentional compatibility identifier; do not mutate the protected legacy frontmatter."))
 
-    # V1-F10 — CHANGELOG script paths must exist.
-    bad_change = [("CHANGELOG.md", ref) for ref in SCRIPT_REF_RE.findall(changelog) if not exists(ref)]
+    # V1-F10 — CHANGELOG concrete script paths must exist.
+    bad_change = [("CHANGELOG.md", ref) for ref in SCRIPT_REF_RE.findall(changelog) if "..." not in ref and not exists(ref)]
     out.append(result("V1-F10", not bad_change, f"bad CHANGELOG script refs={bad_change}",
         "A changelog that names nonexistent architecture is misleading provenance.",
         "Correct historical paths and avoid claiming files/workflows that do not exist."))
 
     # V1-F11 — mixed shared naming is acceptable only with an explicit convention.
     ok = "shared 命名约定" in prompt_readme and "05-" in prompt_readme and "06-" in prompt_readme
-    out.append(result("V1-F11", ok, "prompts/README.md documents legacy shared vs numbered additive policies", 
+    out.append(result("V1-F11", ok, "prompts/README.md documents legacy shared vs numbered additive policies",
         "Undocumented mixed naming looks accidental and encourages inconsistent additions.",
         "Document the compatibility naming convention rather than renaming referenced legacy files."))
 
     # V1-F12 — CI must exist and run pytest + this audit.
     ci = text(".github/workflows/ci.yml")
     ok = exists(".github/workflows/ci.yml") and exists(".github/workflows/validate-skill.yml") and "pytest" in ci and "audit_repo.py" in ci
-    out.append(result("V1-F12", ok, "ci.yml + validate-skill.yml; CI runs pytest and audit_repo.py", 
+    out.append(result("V1-F12", ok, "ci.yml + validate-skill.yml; CI runs pytest and audit_repo.py",
         "Without CI, regressions can merge unnoticed.",
         "Run static audit, preservation guard and pytest on pull requests."))
 
