@@ -13,12 +13,14 @@
     "skill_legacy_prefix_must_remain_byte_exact": true
   },
   "approved_bugfix_paths": [
+    "config/pipeline.yaml",
     "scripts/run_pipeline.py",
     "scripts/report.py",
     "scripts/validate.py",
     "prompts/README.md"
   ],
   "approved_bugfix_reasons": {
+    "config/pipeline.yaml": "Fix invalid YAML syntax in recommendations[0] data-flow paths so the runtime can actually load the configuration.",
     "scripts/run_pipeline.py": "Implement the quality gates already specified by v1.0.0; repair run modes, stage resume, --show-audit, --journal alias, and honest --no-ai-stub behavior.",
     "scripts/report.py": "Prevent demo/missing-validation runs from being mislabeled SUBMISSION_READY.",
     "scripts/validate.py": "Align Finding output with validation.schema.json and correct PASS_WITH_WARNINGS verdict logic so G6 can evaluate real findings.",
