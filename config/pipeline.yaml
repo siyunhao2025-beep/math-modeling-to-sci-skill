@@ -285,7 +285,9 @@ data_flow:
   - from: S4
     to: S5
     contract: journal-match.json
-    key_fields: [recommendations[0].template, recommendations[0].constraints]
+    key_fields:
+      - "recommendations[0].template"
+      - "recommendations[0].constraints"
 
   - from: S5
     to: S6
