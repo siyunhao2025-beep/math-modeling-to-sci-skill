@@ -9,11 +9,13 @@ until the Agent artifacts are completed.
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import os
+from pathlib import Path
+import sys
 
-from readiness import claim_evidence, compliance_audit, figure_table_audit, journal_fit
-from readiness import language_check, reference_verifier, similarity_precheck, submission_preflight
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from readiness import claim_evidence, compliance_audit, figure_table_audit, journal_fit  # noqa: E402
+from readiness import language_check, reference_verifier, similarity_precheck, submission_preflight  # noqa: E402
 
 
 def main() -> int:
