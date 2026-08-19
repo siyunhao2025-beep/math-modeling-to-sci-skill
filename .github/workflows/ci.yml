@@ -30,6 +30,9 @@ jobs:
       - name: Check documentation/config paths
         run: python scripts/check_docs.py
 
+      - name: Run 18-point repository risk audit
+        run: python scripts/audit_repo.py
+
       - name: Check preservation contract
         run: python scripts/check_preservation.py
 
