@@ -1,0 +1,325 @@
+# ============================================================================
+# pipeline.yaml — 七阶段流水线编排配置
+#
+# 被 scripts/run_pipeline.py 与 prompts/00-orchestrator.md 共同消费。
+# 修改阶段划分属于破坏性变更，需递增 MAJOR 版本。
+# ============================================================================
+
+pipeline:
+  name: math-modeling-to-sci
+  version: "1.0.0"
+  ir_schema_version: "1.0"
+
+  # 运行模式
+  modes:
+    auto:
+      description: 全自动执行，门控失败按 quality-gates.yaml 的 on_fail 策略处理
+      pause_at_gates: false
+      allow_degrade: true
+    interactive:
+      description: 每个门控处暂停等作者确认（首次使用推荐）
+      pause_at_gates: true
+      allow_degrade: true
+    dry-run:
+      description: 只跑解析、评估、期刊匹配，不生成成稿
+      pause_at_gates: false
+      allow_degrade: true
+      stages: [S1, S2, S3, S4]
+      skip_rendering: true
+
+  defaults:
+    workdir_layout_version: "1.0"
+    snapshot_before_stage: true      # 每阶段前打快照，支持 --rollback
+    atomic_writes: true              # 临时文件 + 原子替换，中断无半成品
+    audit_log: audit.jsonl
+    offline_tolerant: true           # 无网络时降级而非硬失败
+    max_total_retries: 12            # 全流程重试预算上限，防止无限循环
+
+# ----------------------------------------------------------------------------
+# 阶段定义
+# ----------------------------------------------------------------------------
+stages:
+
+  - id: S1
+    name: 输入解析
+    prompt: prompts/01-ingest-parse.md
+    workdir: 01-parse
+    depends_on: []
+    scripts:
+      - scripts/ingest/detect_format.py
+      - scripts/ingest/parse_docx.py        # 条件执行：format == docx
+      - scripts/ingest/parse_latex.py       # 条件执行：format in (latex, latex-project)
+      - scripts/validate/validate_ir.py
+    inputs:
+      - key: source
+        from: 00-input/
+        required: true
+    outputs:
+      - key: ir
+        path: 01-parse/manuscript.ir.json
+        schema: config/schema/manuscript.schema.json
+        required: true
+      - key: warnings
+        path: 01-parse/parse-warnings.json
+        required: false
+    gate: G1
+    timeout_sec: 300
+    retry:
+      max_attempts: 3
+      strategy: alternate_parser     # 依次尝试不同解析策略
+      backoff_sec: 0
+
+  - id: S2
+    name: 学术化改写
+    prompt: prompts/02-academic-rewrite.md
+    workdir: 02-rewrite
+    depends_on: [S1]
+    scripts:
+      - scripts/validate/validate_ir.py
+      - scripts/validate/check_citations.py   # --verify-doi
+    inputs:
+      - key: ir
+        from: 01-parse/manuscript.ir.json
+        required: true
+      - key: improvement_actions
+        from: 03-assess/assessment.json      # G3 回退时的定向重写输入
+        required: false
+    outputs:
+      - key: ir
+        path: 02-rewrite/manuscript.rewritten.json
+        schema: config/schema/manuscript.schema.json
+        required: true
+      - key: bib
+        path: 02-rewrite/references.bib
+        required: true
+      - key: diff
+        path: 02-rewrite/rewrite-diff.md
+        required: false
+    gate: G2
+    timeout_sec: 1800
+    requires_network: recommended    # 文献检索需要；无网络则降级并标记
+    retry:
+      max_attempts: 2
+      strategy: tighten_constraints  # 重试时收紧反幻觉约束
+      backoff_sec: 5
+
+  - id: S3
+    name: 质量评估
+    prompt: prompts/03-quality-assessment.md
+    workdir: 03-assess
+    depends_on: [S2]
+    inputs:
+      - key: ir
+        from: 02-rewrite/manuscript.rewritten.json
+        required: true
+    outputs:
+      - key: assessment
+        path: 03-assess/assessment.json
+        schema: config/schema/assessment.schema.json
+        required: true
+    gate: G3
+    timeout_sec: 600
+    independence:
+      # 关键：S3 必须以独立审稿人视角评估，不得复用 S2 的自述
+      forbid_context_reuse_from: [S2]
+      note: 避免同一视角自我确认；S3 只读 IR，不读 S2 的改写理由
+
+  - id: S4
+    name: 期刊匹配
+    prompt: prompts/04-journal-matching.md
+    workdir: 04-journals
+    depends_on: [S3]
+    scripts:
+      - scripts/journals/match_journals.py
+    inputs:
+      - key: assessment
+        from: 03-assess/assessment.json
+        required: true
+      - key: ir
+        from: 02-rewrite/manuscript.rewritten.json
+        required: true
+      - key: journal_db
+        from: config/journals.yaml
+        required: true
+    outputs:
+      - key: match
+        path: 04-journals/journal-match.json
+        schema: config/schema/journal-match.schema.json
+        required: true
+      - key: evidence
+        path: 04-journals/journal-evidence/
+        required: false
+    gate: G4
+    timeout_sec: 900
+    requires_network: recommended
+    retry:
+      max_attempts: 3
+      strategy: relax_scope_constraints
+      backoff_sec: 10
+
+  - id: S5
+    name: 模板适配
+    prompt: prompts/05-template-adaptation.md
+    workdir: 05-template
+    depends_on: [S4]
+    scripts:
+      - scripts/journals/fetch_template.py
+      - scripts/render/render_latex.py
+      - scripts/render/render_docx.py
+    inputs:
+      - key: ir
+        from: 02-rewrite/manuscript.rewritten.json
+        required: true
+      - key: match
+        from: 04-journals/journal-match.json
+        required: true
+      - key: target_journal
+        from: cli:--journal
+        required: false
+        note: 未指定时取 recommendations[0]
+    outputs:
+      - key: template_dir
+        path: 05-template/template/
+        required: true
+      - key: build
+        path: 05-template/build/
+        required: true
+    gate: G5
+    timeout_sec: 900
+    requires_network: optional
+    degrade_chain:
+      - official_journal_template
+      - publisher_generic_template
+      - bundled_skeleton           # assets/templates/
+      - plain_article_class        # 最后兜底：standard article
+
+  - id: S6
+    name: 多轮校验
+    prompt: prompts/06-multi-round-validation.md
+    workdir: 06-validate
+    depends_on: [S5]
+    scripts:
+      - scripts/validate/check_citations.py
+      - scripts/validate/check_figures_tables.py
+      - scripts/validate/check_equations.py
+      - scripts/validate/latex_compile_check.py
+    inputs:
+      - key: build
+        from: 05-template/build/
+        required: true
+      - key: constraints
+        from: 04-journals/journal-match.json
+        required: true
+      - key: original_ir
+        from: 01-parse/manuscript.ir.json
+        required: true
+        note: 数值一致性交叉验证的基准
+    outputs:
+      - key: validation
+        path: 06-validate/validation-final.json
+        schema: config/schema/validation.schema.json
+        required: true
+    gate: G6
+    timeout_sec: 1200
+    iteration:
+      max_rounds: 4
+      exit_condition: "summary.error_count == 0"
+      per_round_output: "06-validate/validation-round-{n}.json"
+      fix_policy:
+        auto_fix_severity: [error, warning]
+        never_auto_fix:                # 这些必须作者决策
+          - numeric_value_change
+          - author_list_change
+          - claim_strength_change
+          - reference_deletion
+
+  - id: S7
+    name: 结果汇报
+    prompt: prompts/07-final-report.md
+    workdir: 07-report
+    depends_on: [S6]
+    scripts:
+      - scripts/report/build_report.py
+    inputs:
+      - key: all_artifacts
+        from: "*"
+        required: true
+    outputs:
+      - key: report
+        path: 07-report/conversion-report.md
+        required: true
+      - key: final_tex
+        path: 07-report/manuscript-final.tex
+        required: false
+      - key: final_pdf
+        path: 07-report/manuscript-final.pdf
+        required: false
+      - key: final_docx
+        path: 07-report/manuscript-final.docx
+        required: false
+    gate: null
+    timeout_sec: 600
+
+# ----------------------------------------------------------------------------
+# 阶段间数据流转契约（供编排器校验，防止字段漂移）
+# ----------------------------------------------------------------------------
+data_flow:
+  - from: S1
+    to: S2
+    contract: manuscript.ir.json
+    must_preserve: [equations, figures, tables, symbol_map, provenance.source_sha256]
+    note: S2 不得删除任何数学对象；删除意图须改为 gaps 记录
+
+  - from: S2
+    to: S3
+    contract: manuscript.rewritten.json
+    must_preserve: [gaps]
+    note: S3 只读 IR 本身，不读 rewrite_log，保证评估独立性
+
+  - from: S3
+    to: S4
+    contract: assessment.json
+    key_fields: [total_score, tier, field_classification.scope_tags,
+                 field_classification.method_tags]
+
+  - from: S4
+    to: S5
+    contract: journal-match.json
+    key_fields: [recommendations[0].template, recommendations[0].constraints]
+
+  - from: S5
+    to: S6
+    contract: build/
+    key_fields: [main.tex, references.bib, figures/]
+
+  - from: S6
+    to: S7
+    contract: validation-final.json
+    key_fields: [verdict, summary, cross_validation]
+
+  - from: "*"
+    to: S7
+    contract: audit.jsonl
+    note: 报告必须如实呈现所有 degrade 与 auto_fix 事件
+
+# ----------------------------------------------------------------------------
+# 外部依赖与降级
+# ----------------------------------------------------------------------------
+external_dependencies:
+  network:
+    used_by: [S2, S4, S5]
+    on_unavailable: degrade
+    degrade_note: |
+      S2: 跳过新增文献检索，仅保留原文引用，所有拟新增引用标 [[UNVERIFIED_REF]]
+      S4: 仅用 config/journals.yaml 本地库，self_check.offline_mode = true
+      S5: 直接走 bundled_skeleton
+  latex_toolchain:
+    probe: [latexmk, pdflatex, biber]
+    used_by: [S5, S6, S7]
+    on_unavailable: degrade
+    degrade_note: 跳过编译校验与 PDF 产出，报告声明"未经编译验证"
+  pandoc:
+    probe: [pandoc]
+    used_by: [S5]
+    on_unavailable: degrade
+    degrade_note: DOCX 产出改用 python-docx 直接构建，样式保真度下降

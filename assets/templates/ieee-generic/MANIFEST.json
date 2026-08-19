@@ -1,0 +1,9 @@
+{
+  "template_id": "ieee-generic",
+  "publisher": "IEEE",
+  "document_class": "IEEEtran",
+  "intended_use": "S5 level-3 fallback when official/publisher templates unavailable",
+  "is_official": false,
+  "notes": "投稿前必须替换为目标期刊官方 IEEEtran 模板与 author guidelines。",
+  "required_packages": ["IEEEtran", "amsmath", "amssymb", "graphicx", "booktabs"]
+}

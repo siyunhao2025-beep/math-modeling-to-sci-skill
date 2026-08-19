@@ -1,0 +1,282 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/config/schema/journal-match.schema.json",
+  "title": "Journal Matching Result",
+  "description": "S4 阶段输出。每个推荐必须带可核验证据，禁止凭记忆填写影响因子。",
+  "type": "object",
+  "required": ["schema_version", "matched_at", "recommendations", "search_log", "self_check"],
+  "additionalProperties": false,
+
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0" },
+    "matched_at": { "type": "string", "format": "date-time" },
+
+    "input_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "paper_title": { "type": ["string", "null"] },
+        "total_score": { "type": ["number", "null"] },
+        "tier": { "type": ["string", "null"] },
+        "scope_tags": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "method_tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+      }
+    },
+
+    "candidate_pool_size": {
+      "type": "integer", "minimum": 0,
+      "description": "初筛候选池大小。<10 时应放宽约束重新检索。"
+    },
+
+    "recommendations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "description": "推荐期刊，按 match_score 降序。正常应为 3-5 个（G4 要求 ≥3）。",
+      "items": {
+        "type": "object",
+        "required": ["rank", "name", "publisher", "match_score", "match_rationale",
+                     "impact_factor", "fit_evidence", "rejection_risks", "data_sources"],
+        "additionalProperties": false,
+        "properties": {
+          "rank": { "type": "integer", "minimum": 1 },
+          "journal_id": {
+            "type": ["string", "null"],
+            "description": "若来自 config/journals.yaml，填其 id；联网新发现的填 null"
+          },
+          "name": { "type": "string" },
+          "publisher": { "type": "string" },
+          "issn": { "type": ["string", "null"] },
+          "homepage": { "type": ["string", "null"] },
+          "submission_url": { "type": ["string", "null"] },
+
+          "match_score": {
+            "type": "number", "minimum": 0, "maximum": 100,
+            "description": "综合匹配度。权重构成见 score_components。"
+          },
+          "score_components": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "properties": {
+              "scope_fit":       { "type": "number", "minimum": 0, "maximum": 100 },
+              "method_fit":      { "type": "number", "minimum": 0, "maximum": 100 },
+              "quality_fit":     { "type": "number", "minimum": 0, "maximum": 100 },
+              "tier_alignment":  { "type": "number", "minimum": 0, "maximum": 100 },
+              "practical_fit":   { "type": "number", "minimum": 0, "maximum": 100 }
+            }
+          },
+
+          "match_rationale": {
+            "type": "string", "minLength": 50,
+            "description": "为什么推荐这个期刊。必须结合本文具体内容，不能是期刊简介的复述。"
+          },
+
+          "impact_factor": {
+            "type": "object",
+            "required": ["value", "year", "source", "retrieved_at"],
+            "additionalProperties": false,
+            "properties": {
+              "value": {
+                "type": ["number", "null"],
+                "description": "无法核实时必须为 null，禁止填写估计值"
+              },
+              "year": { "type": ["integer", "null"] },
+              "source": {
+                "type": ["string", "null"],
+                "description": "如 'JCR 2024' / '期刊官网 2026-08' / 'local-cache'"
+              },
+              "retrieved_at": { "type": ["string", "null"], "format": "date-time" },
+              "note": {
+                "type": ["string", "null"],
+                "description": "如 'local-cache fallback，未联网核实，投稿前请自行复核'"
+              }
+            }
+          },
+
+          "quartile": { "type": ["string", "null"], "enum": ["Q1", "Q2", "Q3", "Q4", null] },
+          "jcr_category": { "type": ["string", "null"] },
+          "cas_division": { "type": ["string", "null"], "description": "中科院分区，如 '数学 2区'" },
+
+          "review_weeks": {
+            "type": ["array", "null"],
+            "items": { "type": "number" },
+            "minItems": 2, "maxItems": 2,
+            "description": "[下限, 上限]，无公开数据填 null"
+          },
+          "acceptance_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+          "open_access": { "type": ["string", "null"], "enum": ["gold", "hybrid", "green", "closed", null] },
+          "apc": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "properties": {
+              "amount": { "type": ["number", "null"] },
+              "currency": { "type": ["string", "null"] },
+              "note": { "type": ["string", "null"] }
+            }
+          },
+
+          "fit_evidence": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Aims&Scope 契合点。每条须给出期刊 scope 原文片段与本文对应内容。",
+            "items": {
+              "type": "object",
+              "required": ["scope_statement", "paper_correspondence"],
+              "additionalProperties": false,
+              "properties": {
+                "scope_statement": { "type": "string", "description": "期刊 Aims&Scope 中的原文片段" },
+                "paper_correspondence": { "type": "string", "description": "本文中对应的内容与 section id" },
+                "strength": { "enum": ["strong", "moderate", "weak"] }
+              }
+            }
+          },
+
+          "recent_similar_papers": {
+            "type": "array",
+            "description": "该刊近期发表的同类论文，用于佐证 scope 契合",
+            "items": {
+              "type": "object",
+              "required": ["title"],
+              "additionalProperties": false,
+              "properties": {
+                "title": { "type": "string" },
+                "year": { "type": ["integer", "null"] },
+                "doi": { "type": ["string", "null"] },
+                "relevance": { "type": ["string", "null"] }
+              }
+            },
+            "default": []
+          },
+
+          "rejection_risks": {
+            "type": "array",
+            "minItems": 1,
+            "description": "拒稿风险。必须诚实列出，这是本字段的核心价值。",
+            "items": {
+              "type": "object",
+              "required": ["risk", "likelihood", "mitigation"],
+              "additionalProperties": false,
+              "properties": {
+                "risk": { "type": "string" },
+                "likelihood": { "enum": ["high", "medium", "low"] },
+                "mitigation": { "type": "string", "description": "投稿前可做的缓解措施" }
+              }
+            }
+          },
+
+          "template": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "properties": {
+              "latex_url": { "type": ["string", "null"] },
+              "docx_url": { "type": ["string", "null"] },
+              "guide_for_authors_url": { "type": ["string", "null"] },
+              "bundled_fallback": { "type": ["string", "null"] },
+              "availability": { "enum": ["official", "publisher-generic", "bundled-fallback", "unavailable"] }
+            }
+          },
+
+          "constraints": {
+            "type": ["object", "null"],
+            "description": "投稿硬约束，S5/S6 会据此校验",
+            "additionalProperties": false,
+            "properties": {
+              "max_words": { "type": ["integer", "null"] },
+              "max_pages": { "type": ["integer", "null"] },
+              "abstract_max_words": { "type": ["integer", "null"] },
+              "max_keywords": { "type": ["integer", "null"] },
+              "max_figures": { "type": ["integer", "null"] },
+              "reference_style": { "type": ["string", "null"], "description": "如 numbered / author-year / IEEEtran" },
+              "requires_highlights": { "type": ["boolean", "null"] },
+              "requires_graphical_abstract": { "type": ["boolean", "null"] },
+              "requires_data_availability": { "type": ["boolean", "null"] },
+              "ai_disclosure_policy": { "type": ["string", "null"] }
+            }
+          },
+
+          "data_sources": {
+            "type": "array", "minItems": 1,
+            "description": "本条推荐所依据的信息来源，用于审计复核",
+            "items": {
+              "type": "object",
+              "required": ["type"],
+              "additionalProperties": false,
+              "properties": {
+                "type": { "enum": ["local-db", "web-search", "publisher-page", "doaj", "crossref", "other"] },
+                "url": { "type": ["string", "null"] },
+                "retrieved_at": { "type": ["string", "null"], "format": "date-time" },
+                "evidence_file": {
+                  "type": ["string", "null"],
+                  "description": "落盘存证的相对路径，如 journal-evidence/apm-scope.md"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "excluded_candidates": {
+      "type": "array",
+      "description": "被排除的候选及原因，体现筛选过程的可解释性",
+      "items": {
+        "type": "object",
+        "required": ["name", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "reason": { "type": "string" },
+          "excluded_by": { "enum": ["scope_mismatch", "quality_gap", "predatory_risk",
+                                     "scope_too_narrow", "discontinued", "apc_too_high", "other"] }
+        }
+      },
+      "default": []
+    },
+
+    "strategy_note": {
+      "type": ["string", "null"],
+      "description": "投稿策略建议，如冲刺/稳妥/保底的梯度安排与改投顺序"
+    },
+
+    "search_log": {
+      "type": "array",
+      "description": "检索过程记录，保证可复现",
+      "items": {
+        "type": "object",
+        "required": ["query", "tool"],
+        "additionalProperties": false,
+        "properties": {
+          "query": { "type": "string" },
+          "tool": { "type": "string" },
+          "at": { "type": ["string", "null"], "format": "date-time" },
+          "result_count": { "type": ["integer", "null"] },
+          "note": { "type": ["string", "null"] }
+        }
+      }
+    },
+
+    "self_check": {
+      "type": "object",
+      "required": ["all_if_have_provenance", "no_predatory_journals",
+                   "all_have_fit_evidence", "all_have_rejection_risks"],
+      "additionalProperties": false,
+      "properties": {
+        "all_if_have_provenance": {
+          "type": "boolean",
+          "description": "每个 impact_factor 都有 year+source+retrieved_at 或明确为 null"
+        },
+        "no_predatory_journals": {
+          "type": "boolean",
+          "description": "已对照 Beall's list 类信号排查掠夺性期刊"
+        },
+        "all_have_fit_evidence": { "type": "boolean" },
+        "all_have_rejection_risks": { "type": "boolean" },
+        "offline_mode": {
+          "type": "boolean", "default": false,
+          "description": "true 表示无网络，全部数据来自 local-db，报告必须显著声明"
+        },
+        "notes": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

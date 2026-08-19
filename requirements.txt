@@ -1,0 +1,21 @@
+# ---- core ----
+PyYAML>=6.0.1              # 配置文件解析
+jsonschema>=4.21.0         # IR / assessment / journal-match schema 校验
+
+# ---- input parsing ----
+python-docx>=1.1.0         # .docx 结构与样式抽取
+lxml>=5.1.0                # OOXML / OMML 公式解析
+
+# ---- output rendering ----
+Jinja2>=3.1.3              # LaTeX / 报告模板渲染
+
+# ---- bibliography ----
+bibtexparser>=1.4.1        # .bib 读写与 key 规范化
+
+# ---- external verification (optional but recommended) ----
+requests>=2.31.0           # DOI / Crossref 校验、模板下载
+
+# ---- dev ----
+pytest>=8.0.0
+pytest-cov>=4.1.0
+ruff>=0.3.0

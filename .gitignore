@@ -1,0 +1,95 @@
+# ---- pipeline runtime output ----
+runs/
+.snapshot/
+*.jsonl
+!examples/**/*.jsonl
+
+# ---- LaTeX build artifacts ----
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.log
+*.lot
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+*.nav
+*.snm
+*.vrb
+*.xdv
+!**/references.bib
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+!examples/output/build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ---- virtual envs ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- testing / coverage ----
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# ---- type checkers / linters ----
+.mypy_cache/
+.dmypy.json
+.ruff_cache/
+
+# ---- editors ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- secrets ----
+.env
+.env.*
+*.pem
+*_token
+credentials.json
+
+# ---- user documents (never commit someone's manuscript) ----
+*.docx
+*.doc
+*.pdf
+!examples/**
+!assets/**

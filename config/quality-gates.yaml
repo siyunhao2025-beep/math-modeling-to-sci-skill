@@ -1,0 +1,523 @@
+# ============================================================================
+# quality-gates.yaml — 质量门控定义
+#
+# 每个门控定义：判定条件（conditions）、失败动作（on_fail）、重试上限。
+# 编排器在阶段结束后逐条求值，全部 pass 才允许进入下一阶段。
+#
+# on_fail.action 取值：
+#   retry     — 重跑当前阶段（带策略调整）
+#   rollback  — 回退到指定上游阶段重做
+#   degrade   — 降级执行并记录 degrade 事件（必须在报告披露）
+#   block     — 停止流水线，产出诊断报告，不生成"可投稿"成稿
+#   ask_human — interactive 模式下暂停询问；auto 模式下按 fallback_action 处理
+# ============================================================================
+
+meta:
+  version: "1.0.0"
+  # 评分维度权重（S3 加权总分用），总和必须为 1.0
+  dimension_weights:
+    novelty: 0.25                    # 创新性 —— 权重最高，SCI 的核心门槛
+    methodological_rigor: 0.22       # 方法论严谨性
+    experimental_completeness: 0.20  # 实验完整性
+    academic_writing: 0.13           # 学术表达
+    structural_compliance: 0.10      # 结构规范性
+    reproducibility: 0.10            # 可复现性
+
+# ============================================================================
+gates:
+
+  # --------------------------------------------------------------------------
+  G1:
+    name: 结构完整性门控
+    stage: S1
+    description: 确认解析没有丢内容、章节结构可识别
+    conditions:
+      - id: G1-01
+        check: schema_valid
+        target: 01-parse/manuscript.ir.json
+        against: config/schema/manuscript.schema.json
+        severity: error
+
+      - id: G1-02
+        check: min_sections
+        threshold: 3
+        message: 识别到的章节少于 3 个，很可能是标题层级未被识别
+        severity: error
+
+      - id: G1-03
+        check: required_semantic_roles_present
+        # 这四类必须至少各有一个，否则不足以支撑论文改写
+        required_any_of:
+          - [problem_statement, introduction]
+          - [methodology, model_formulation]
+          - [experiments, results]
+          - [conclusion]
+        severity: error
+
+      - id: G1-04
+        check: no_content_loss
+        # 解析前后字符数比值，防止解析器静默丢段
+        min_ratio: 0.85
+        compare: source_text_length vs ir_total_text_length
+        severity: error
+
+      - id: G1-05
+        check: math_objects_extracted
+        # 原文有公式标记但 IR 里 equations 为空 → 解析失败
+        rule: "if source_has_math_markers then len(equations) > 0"
+        severity: error
+
+      - id: G1-06
+        check: role_confidence
+        min_avg: 0.6
+        message: 语义角色判定置信度偏低，建议人工确认章节归属
+        severity: warning
+
+      - id: G1-07
+        check: figures_have_source
+        message: 存在无源文件路径的图，需作者提供原图
+        severity: warning
+        emit_gap:
+          category: missing_figure_source
+          gap_severity: medium
+
+    on_fail:
+      error:
+        action: retry
+        max_attempts: 3
+        strategy: alternate_parser
+        strategies_order:
+          - default
+          - heading_by_style        # docx：改用样式名判定标题
+          - heading_by_format       # docx：改用字号/加粗判定
+          - flat_fallback           # 全部归为 unclassified，交由提示词语义判定
+        after_exhausted:
+          action: degrade
+          note: 以 flat IR 继续，S1 提示词全权负责语义角色标注，报告中声明
+      warning:
+        action: proceed
+        record: gaps
+
+  # --------------------------------------------------------------------------
+  G2:
+    name: 反幻觉与引用可验证门控
+    stage: S2
+    description: 本项目最重要的门控。宁可内容缺失，不可内容虚假。
+    conditions:
+      - id: G2-01
+        check: schema_valid
+        target: 02-rewrite/manuscript.rewritten.json
+        against: config/schema/manuscript.schema.json
+        severity: error
+
+      - id: G2-02
+        check: no_unverified_added_references
+        rule: "all(r.verification.status startswith 'verified_' for r in references if r.origin == 'added_by_s2')"
+        message: 新增引用中存在未通过 DOI/来源验证的条目
+        severity: error
+        note: 无法验证的引用应保留 [[UNVERIFIED_REF]] 标记留在正文，但不得写入 references 数组
+
+      - id: G2-03
+        check: numeric_consistency
+        # 逐一比对改写前后的数值，任何变动都是 error
+        compare_against: 01-parse/manuscript.ir.json
+        tolerance: 0
+        severity: error
+        message: 改写过程改变了原文数值，属于严重错误
+
+      - id: G2-04
+        check: math_semantics_preserved
+        rule: "equation count not decreased AND all original eq ids traceable"
+        severity: error
+
+      - id: G2-05
+        check: no_fabricated_experiment_claims
+        # 检测原文无实验依据却出现的结果性断言
+        detect_patterns_without_evidence:
+          - "experiments (show|demonstrate|confirm)"
+          - "results indicate"
+          - "we achieved .* (accuracy|improvement|speedup)"
+        require_backing: [experiments, results]
+        severity: error
+
+      - id: G2-06
+        check: terminology_consistency
+        target: symbol_map
+        rule: 同一符号全文含义唯一，重命名须全文一致并记录 renamed_from
+        severity: error
+
+      - id: G2-07
+        check: gaps_registered
+        rule: "every [[MISSING]] flag in blocks has a corresponding entry in gaps"
+        severity: error
+
+      - id: G2-08
+        check: language_unified
+        rule: 目标语言为 en 时，正文不得残留 CJK 字符（图表 caption 亦然）
+        severity: warning
+        note: S6 会再查一次，此处为提前发现
+
+      - id: G2-09
+        check: has_research_gap_statement
+        message: 缺少明确的研究缺口陈述，是建模报告转论文最常见的缺陷
+        severity: warning
+
+      - id: G2-10
+        check: has_explicit_contributions
+        message: 缺少显式创新点声明（通常置于 Introduction 末尾的 bullet list）
+        severity: warning
+
+    on_fail:
+      error:
+        action: retry
+        max_attempts: 2
+        strategy: tighten_constraints
+        strategy_detail: |
+          重试时在提示词中追加：
+          1. 明确列出上一轮违规的具体条目
+          2. 强化"禁止生成任何原文不存在的数值、结论、引用"约束
+          3. 要求所有不确定内容一律标记 [[MISSING]] 而非填充
+        after_exhausted:
+          action: block
+          note: |
+            连续两轮仍产生幻觉内容，停止流水线。
+            输出诊断报告列出所有违规项，要求人工介入。
+            绝不带着虚假内容继续往下走。
+      warning:
+        action: proceed
+        record: report_warnings
+
+  # --------------------------------------------------------------------------
+  G3:
+    name: 质量分数门控
+    stage: S3
+    description: 分数不达线时回退 S2 定向重写，避免拿低质量稿去匹配期刊
+    conditions:
+      - id: G3-01
+        check: schema_valid
+        target: 03-assess/assessment.json
+        against: config/schema/assessment.schema.json
+        severity: error
+
+      - id: G3-02
+        check: min_total_score
+        threshold: 6.5                 # 调低可放宽（如 5.5），见 README「配置」节
+        severity: error
+
+      - id: G3-03
+        check: min_dimension_score
+        # 单项过低会成为致命短板，即使总分达标
+        thresholds:
+          novelty: 5.0
+          methodological_rigor: 5.5
+          experimental_completeness: 5.0
+          academic_writing: 6.0
+          structural_compliance: 6.0
+          reproducibility: 4.0
+        severity: error
+
+      - id: G3-04
+        check: no_blocker_weakness
+        rule: "not any(w.severity == 'blocker' for w in weaknesses)"
+        severity: error
+
+      - id: G3-05
+        check: tier_not_insufficient
+        rule: "tier != 'insufficient-content'"
+        severity: error
+        note: 原文信息量不足以支撑期刊论文，改写无法解决，必须作者补内容
+
+      - id: G3-06
+        check: self_check_all_true
+        target: assessment.self_check
+        severity: warning
+
+      - id: G3-07
+        check: min_confidence
+        threshold: 0.5
+        message: 评估置信度过低，结论参考价值有限
+        severity: warning
+
+    on_fail:
+      error:
+        action: rollback
+        rollback_to: S2
+        max_attempts: 2
+        pass_forward:
+          # 回退时把改进项传给 S2 做定向重写
+          - assessment.improvement_actions where priority == P0
+          - assessment.weaknesses where severity in [blocker, major]
+        filter: 只执行 auto_applicable == true 的改进项
+        after_exhausted:
+          action: ask_human
+          fallback_action: degrade
+          degrade_note: |
+            两轮重写后仍未达阈值。以当前分数继续，但：
+            1. 期刊推荐自动下调一个档位（Q1→Q2）
+            2. 报告首页显著标注"未达质量门槛，建议补充研究内容后再投"
+            3. 列出所有 requires_author_input == true 的改进项
+      # tier == insufficient-content 特殊处理：不重试，直接 block
+      special_cases:
+        - when: "tier == 'insufficient-content'"
+          action: block
+          note: 生成"内容补充指引报告"而非论文，明确告知作者需要补什么
+
+  # --------------------------------------------------------------------------
+  G4:
+    name: 期刊候选门控
+    stage: S4
+    conditions:
+      - id: G4-01
+        check: schema_valid
+        target: 04-journals/journal-match.json
+        against: config/schema/journal-match.schema.json
+        severity: error
+
+      - id: G4-02
+        check: min_recommendations
+        threshold: 3
+        severity: error
+
+      - id: G4-03
+        check: all_have_fit_evidence
+        rule: "all(len(r.fit_evidence) >= 1 for r in recommendations)"
+        severity: error
+
+      - id: G4-04
+        check: all_have_rejection_risks
+        rule: "all(len(r.rejection_risks) >= 1 for r in recommendations)"
+        severity: error
+        note: 只报喜不报忧的推荐是无效推荐
+
+      - id: G4-05
+        check: impact_factor_provenance
+        rule: "all(r.impact_factor.value is null or (r.impact_factor.year and r.impact_factor.source) for r in recommendations)"
+        message: 影响因子缺少年份或来源标注，禁止输出无出处的数字
+        severity: error
+
+      - id: G4-06
+        check: no_predatory_journals
+        target: self_check.no_predatory_journals
+        severity: error
+
+      - id: G4-07
+        check: tier_alignment
+        # 推荐档位与论文分数不应严重错配
+        rule: |
+          total_score < 6.0  → 不应推荐 Q1 为首选
+          total_score >= 8.0 → 至少含一个 Q1/Q2 选项
+        severity: warning
+
+      - id: G4-08
+        check: has_gradient_strategy
+        message: 建议提供冲刺/稳妥/保底的梯度，而非同档位堆叠
+        severity: warning
+
+    on_fail:
+      error:
+        action: retry
+        max_attempts: 3
+        strategy: relax_scope_constraints
+        strategies_order:
+          - exact_scope_match          # 精确 scope_tags 匹配
+          - broaden_to_secondary_field # 纳入 secondary_fields
+          - broaden_to_application     # 按应用领域而非方法匹配
+          - include_lower_quartile     # 放开分区限制
+        after_exhausted:
+          action: degrade
+          degrade_note: |
+            候选不足 3 个。输出现有候选并显著声明：
+            1. 本文主题较为特殊/交叉，自动匹配覆盖不足
+            2. 给出人工检索建议（关键词组合、Journal Finder 工具链接）
+            3. 建议咨询领域内导师或同行
+
+  # --------------------------------------------------------------------------
+  G5:
+    name: 模板就绪门控
+    stage: S5
+    conditions:
+      - id: G5-01
+        check: template_files_present
+        require_any_of:
+          - "05-template/template/*.cls"
+          - "05-template/template/*.sty"
+          - "05-template/template/*.docx"
+          - "05-template/template/MANIFEST.json"
+        severity: error
+
+      - id: G5-02
+        check: build_main_exists
+        require_any_of:
+          - "05-template/build/main.tex"
+          - "05-template/build/main.docx"
+        severity: error
+
+      - id: G5-03
+        check: all_ir_sections_mapped
+        rule: 每个 IR section 都在成稿中有对应位置，或在 unmapped.json 中登记原因
+        severity: error
+        note: 静默丢章节是不可接受的
+
+      - id: G5-04
+        check: all_math_objects_rendered
+        rule: "rendered equation/figure/table count == IR count"
+        severity: error
+
+      - id: G5-05
+        check: bib_present_and_nonempty
+        target: 05-template/build/references.bib
+        severity: error
+
+      - id: G5-06
+        check: template_source_official
+        message: 使用了降级模板，投稿前请务必替换为期刊官方模板
+        severity: warning
+        emit_degrade_disclosure: true
+
+    on_fail:
+      error:
+        action: degrade
+        degrade_chain:
+          - level: 1
+            source: official_journal_template
+            method: 从 journal-match.json 的 template.latex_url 下载
+          - level: 2
+            source: publisher_generic_template
+            method: 按 publisher 取出版商通用模板（Elsevier elsarticle / IEEEtran / Springer sn-jnl）
+          - level: 3
+            source: bundled_skeleton
+            method: assets/templates/{ieee,elsevier,springer}-generic/
+          - level: 4
+            source: plain_article_class
+            method: 标准 article 类 + 通用学术排版设置
+        disclosure_required: true
+        disclosure_text: |
+          本稿使用「{level_name}」排版，非目标期刊官方模板。
+          投稿前必须：1) 下载期刊官方模板；2) 迁移内容；3) 重新检查格式要求。
+
+  # --------------------------------------------------------------------------
+  G6:
+    name: 零错误硬门控
+    stage: S6
+    description: |
+      本项目唯一的硬门控。残留 error 时禁止把成稿标记为"可投稿"。
+      宁可交付一份标注了阻塞项的草稿，也不交付一份看起来完美但实际有错的稿子。
+    hard: true
+    conditions:
+      - id: G6-01
+        check: schema_valid
+        target: 06-validate/validation-final.json
+        against: config/schema/validation.schema.json
+        severity: error
+
+      - id: G6-02
+        check: zero_errors
+        rule: "summary.error_count == 0"
+        severity: error
+
+      - id: G6-03
+        check: citation_bidirectional_clean
+        rule: "cited_not_in_bib == [] and in_bib_not_cited == []"
+        severity: error
+
+      - id: G6-04
+        check: numeric_consistency_clean
+        rule: "cross_validation.numeric_consistency.mismatches == []"
+        severity: error
+
+      - id: G6-05
+        check: no_cjk_residue
+        rule: 目标语言 en 时成稿零 CJK 字符
+        severity: error
+
+      - id: G6-06
+        check: no_placeholder_residue
+        forbidden_patterns:
+          - "\\[\\[MISSING"
+          - "\\[\\[UNVERIFIED_REF"
+          - "TODO"
+          - "TBD"
+          - "XXX"
+          - "\\\\ref\\{\\?\\?\\}"
+          - "\\?\\?"
+        severity: error
+        note: |
+          占位符必须在成稿中清除。处理方式：
+          - 内容缺失 → 删除该断言 + 保留在 gaps 清单交作者补
+          - 未验证引用 → 删除该引用 + 保留在待补清单
+          绝不允许占位符出现在提交给期刊的文件里
+
+      - id: G6-07
+        check: latex_compiles
+        rule: "latex_compile_check.status == 'pass'"
+        severity: error
+        skippable_when: latex_toolchain_unavailable
+        on_skip: degrade
+
+      - id: G6-08
+        check: journal_constraints_satisfied
+        against: journal-match.json#recommendations[0].constraints
+        checks: [max_words, max_pages, abstract_max_words, max_keywords, reference_style]
+        severity: error
+
+      - id: G6-09
+        check: no_orphan_numbered_objects
+        rule: 编号的公式/图/表必须被正文引用
+        severity: warning
+
+      - id: G6-10
+        check: language_quality
+        target: config/style-rules.yaml
+        severity: warning
+
+    iteration:
+      max_rounds: 4
+      auto_fix_between_rounds: true
+      never_auto_fix:
+        - numeric_value_change      # 改数值 = 学术不端风险
+        - author_list_change
+        - claim_strength_change     # 削弱/强化学术主张须作者同意
+        - reference_deletion        # 删引用须作者确认
+        - conclusion_rewrite
+      escalate_if_oscillating: true
+      oscillation_detect: 同一 finding id 连续两轮出现且未修复 → 停止自动修复，转人工
+
+    on_fail:
+      error:
+        action: retry
+        max_attempts: 4              # = iteration.max_rounds
+        after_exhausted:
+          action: block
+          block_behavior: |
+            1. 成稿状态标记为 DRAFT_WITH_BLOCKERS（而非 SUBMISSION_READY）
+            2. conversion-report.md 首页顶部用醒目区块列出所有残留 error
+            3. 每个 error 给出具体位置 + 建议修法 + 是否需作者决策
+            4. 仍然交付文件（作者可手工修完投稿），但绝不声称"零错误"
+          note: block 不等于不交付，等于不撒谎
+      warning:
+        action: proceed
+        record: report_warnings
+
+# ============================================================================
+# 全局失败策略
+# ============================================================================
+global:
+  max_total_retries: 12
+  on_budget_exhausted:
+    action: block
+    note: 生成部分完成报告，列出已完成阶段与卡住的原因
+
+  snapshot:
+    enabled: true
+    path: .snapshot/{stage}/
+    retain: all                    # 保留全部快照以支持任意回退
+
+  rollback:
+    allowed_targets: [S1, S2, S3, S4, S5]
+    forbidden: [S6, S7]            # 校验与汇报不需要回退，直接重跑
+    note: rollback 会恢复快照并清除下游产物，事件记入 audit.jsonl
+
+  human_in_the_loop:
+    interactive_mode_pauses_at: [G1, G2, G3, G4, G5, G6]
+    auto_mode_pauses_at: [G2, G6]  # 即使 auto 模式，这两个 block 时也要停下来
+    note: G2/G6 涉及学术诚信与投稿质量，不允许静默通过

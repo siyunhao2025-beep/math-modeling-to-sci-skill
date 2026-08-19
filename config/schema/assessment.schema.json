@@ -1,0 +1,192 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/config/schema/assessment.schema.json",
+  "title": "Paper Quality Assessment",
+  "description": "S3 阶段输出的六维质量评分卡。必须可被 G3 门控与 S4 期刊匹配直接消费。",
+  "type": "object",
+  "required": ["schema_version", "assessed_at", "target_ir_sha256", "dimensions",
+               "total_score", "tier", "improvement_actions", "self_check"],
+  "additionalProperties": false,
+
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0" },
+    "assessed_at": { "type": "string", "format": "date-time" },
+    "target_ir_sha256": {
+      "type": "string",
+      "description": "被评估 IR 的哈希，防止评分与稿件版本错配"
+    },
+    "assessor_note": {
+      "type": ["string", "null"],
+      "description": "评估者视角声明。S3 必须以「审稿人视角」独立评估，不复用 S2 的自我陈述。"
+    },
+
+    "dimensions": {
+      "type": "object",
+      "description": "六个评估维度，每维 0-10 分。权重定义在 config/quality-gates.yaml。",
+      "required": ["novelty", "methodological_rigor", "experimental_completeness",
+                   "academic_writing", "structural_compliance", "reproducibility"],
+      "additionalProperties": false,
+      "properties": {
+        "novelty":                   { "$ref": "#/definitions/dimension" },
+        "methodological_rigor":      { "$ref": "#/definitions/dimension" },
+        "experimental_completeness": { "$ref": "#/definitions/dimension" },
+        "academic_writing":          { "$ref": "#/definitions/dimension" },
+        "structural_compliance":     { "$ref": "#/definitions/dimension" },
+        "reproducibility":           { "$ref": "#/definitions/dimension" }
+      }
+    },
+
+    "total_score": {
+      "type": "number", "minimum": 0, "maximum": 10,
+      "description": "加权总分，保留 2 位小数。计算式必须写入 score_breakdown。"
+    },
+    "score_breakdown": {
+      "type": ["string", "null"],
+      "description": "可核验的计算过程，如 0.25*7.0 + 0.20*8.0 + ... = 7.15"
+    },
+
+    "tier": {
+      "enum": ["Q1-ready", "Q2-ready", "Q3-Q4-ready", "major-revision-needed",
+               "not-ready", "insufficient-content"],
+      "description": "综合定位。insufficient-content 表示原文信息量不足以支撑期刊论文。"
+    },
+
+    "confidence": {
+      "type": "number", "minimum": 0, "maximum": 1,
+      "description": "评估置信度。原文缺口多时应降低置信度并在 caveats 说明。"
+    },
+
+    "strengths": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["point", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "point": { "type": "string" },
+          "evidence": { "type": "string", "description": "必须指向 IR 中的具体 section/block id" }
+        }
+      },
+      "minItems": 1
+    },
+
+    "weaknesses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["point", "evidence", "severity", "reviewer_likelihood"],
+        "additionalProperties": false,
+        "properties": {
+          "point": { "type": "string" },
+          "evidence": { "type": "string" },
+          "severity": { "enum": ["blocker", "major", "minor"] },
+          "reviewer_likelihood": {
+            "type": "number", "minimum": 0, "maximum": 1,
+            "description": "审稿人指出该问题的估计概率"
+          },
+          "linked_gap_id": { "type": ["string", "null"], "description": "关联 IR 中的 gap id" }
+        }
+      }
+    },
+
+    "improvement_actions": {
+      "type": "array",
+      "description": "可执行改进项。G3 未通过时 S2 直接按此列表定向重写，因此必须具体到可操作。",
+      "items": {
+        "type": "object",
+        "required": ["id", "priority", "target_section", "action", "expected_gain"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^act-[0-9]+$" },
+          "priority": { "enum": ["P0", "P1", "P2"], "description": "P0=必须做才能投稿" },
+          "target_section": { "type": "string", "description": "section id 或 'global'" },
+          "target_dimension": {
+            "type": ["string", "null"],
+            "enum": ["novelty", "methodological_rigor", "experimental_completeness",
+                     "academic_writing", "structural_compliance", "reproducibility", null]
+          },
+          "action": { "type": "string", "description": "做什么，动词开头，避免空泛" },
+          "expected_gain": {
+            "type": "number", "minimum": 0, "maximum": 10,
+            "description": "预计带来的该维度分数提升"
+          },
+          "requires_author_input": {
+            "type": "boolean", "default": false,
+            "description": "true 表示需要作者提供新数据/实验，S2 无法自动完成"
+          },
+          "auto_applicable": {
+            "type": "boolean", "default": false,
+            "description": "true 表示 S2 可自动执行（纯写作层面改动）"
+          }
+        }
+      }
+    },
+
+    "field_classification": {
+      "type": "object",
+      "description": "供 S4 期刊匹配使用的领域标签。",
+      "additionalProperties": false,
+      "properties": {
+        "primary_field": { "type": ["string", "null"] },
+        "secondary_fields": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "scope_tags": {
+          "type": "array", "items": { "type": "string" },
+          "description": "与 config/journals.yaml 的 scope_tags 取值域一致",
+          "default": []
+        },
+        "method_tags": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "application_domain": { "type": ["string", "null"] },
+        "msc_suggestions": { "type": "array", "items": { "type": "string" }, "default": [] }
+      }
+    },
+
+    "caveats": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "评估的局限性声明，如「未验证数值结果正确性」「无法评估与最新文献的重合度」",
+      "default": []
+    },
+
+    "self_check": {
+      "type": "object",
+      "description": "S3 的自检结果。每项为 false 时必须在 caveats 说明原因。",
+      "required": ["all_dimensions_have_evidence", "score_arithmetic_verified",
+                   "no_fabricated_claims", "actions_are_specific"],
+      "additionalProperties": false,
+      "properties": {
+        "all_dimensions_have_evidence": { "type": "boolean" },
+        "score_arithmetic_verified": { "type": "boolean" },
+        "no_fabricated_claims": { "type": "boolean" },
+        "actions_are_specific": { "type": "boolean" },
+        "notes": { "type": ["string", "null"] }
+      }
+    }
+  },
+
+  "definitions": {
+    "dimension": {
+      "type": "object",
+      "required": ["score", "justification", "evidence_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "score": {
+          "type": "number", "minimum": 0, "maximum": 10,
+          "description": "评分。锚点定义见 prompts/03-quality-assessment.md 的评分卡。"
+        },
+        "justification": {
+          "type": "string", "minLength": 30,
+          "description": "打分理由，必须对照锚点描述说明为何是这个分数而非相邻分数"
+        },
+        "evidence_refs": {
+          "type": "array", "items": { "type": "string" }, "minItems": 1,
+          "description": "支撑该评分的 IR section/block id 列表。空数组不允许。"
+        },
+        "sub_scores": {
+          "type": ["object", "null"],
+          "additionalProperties": { "type": "number", "minimum": 0, "maximum": 10 },
+          "description": "可选的子维度细分"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,491 @@
+# ============================================================================
+# journals.yaml — 期刊候选库（种子数据）
+#
+# ⚠️ 重要声明
+# 本文件中的 impact_factor / quartile / review_weeks 均为**种子快照**，
+# 用途仅限：(1) 构建初筛候选池  (2) 无网络时的 fallback
+#
+# S4 阶段必须联网核实这些数值。任何输出给用户的影响因子都必须带
+# year + source + retrieved_at 三元组，且如实标注是否来自本地缓存。
+# 期刊指标每年变动，投稿前请到期刊官网 / JCR 自行复核。
+#
+# 扩充方法见 CONTRIBUTING.md#扩充期刊库
+# 字段语义见 references/journal-database.md
+# ============================================================================
+
+meta:
+  version: "1.0.0"
+  seed_snapshot_note: "指标为 JCR 2023-2024 区间的近似快照，未逐条核实，仅作候选池构建用"
+  last_curated: "2026-08-19"
+  total_journals: 24
+  coverage_note: |
+    当前覆盖偏向：应用数学、运筹优化、工业工程、能源系统、交通、
+    复杂网络、数据驱动建模。欢迎 PR 扩充其他方向。
+
+# ----------------------------------------------------------------------------
+# 标签取值域（scope_tags / method_tags 必须从此处取值，保证匹配可计算）
+# ----------------------------------------------------------------------------
+taxonomy:
+  scope_tags:
+    - applied-mathematics
+    - mathematical-modelling
+    - operations-research
+    - optimization
+    - industrial-engineering
+    - systems-engineering
+    - transportation
+    - energy-systems
+    - environmental-modelling
+    - epidemiology
+    - finance-economics
+    - supply-chain
+    - complex-networks
+    - control-theory
+    - reliability
+    - decision-science
+    - computational-science
+    - data-science
+    - machine-learning-applications
+    - simulation
+    - biomathematics
+    - manufacturing
+    - urban-planning
+    - risk-analysis
+
+  method_tags:
+    - ode-pde
+    - dynamical-systems
+    - stochastic-processes
+    - queueing-theory
+    - linear-programming
+    - integer-programming
+    - nonlinear-programming
+    - multi-objective-optimization
+    - metaheuristics
+    - game-theory
+    - graph-theory
+    - statistical-modelling
+    - time-series
+    - bayesian-inference
+    - machine-learning
+    - deep-learning
+    - agent-based-modelling
+    - monte-carlo
+    - numerical-simulation
+    - sensitivity-analysis
+    - fuzzy-logic
+    - data-envelopment-analysis
+    - ahp-topsis
+    - cellular-automata
+
+# ----------------------------------------------------------------------------
+# 匹配算法权重（scripts/journals/match_journals.py 消费）
+# ----------------------------------------------------------------------------
+matching:
+  weights:
+    scope_fit: 0.35        # scope_tags 交集程度
+    method_fit: 0.25       # method_tags 交集程度
+    quality_fit: 0.20      # 论文分数与期刊档位的适配度
+    tier_alignment: 0.10   # 分区与 assessment.tier 的对齐
+    practical_fit: 0.10    # 审稿周期、OA、APC 等实务因素
+  quality_bands:
+    # total_score 区间 → 建议期刊档位
+    - { min: 8.5, max: 10.0, target_quartiles: [Q1],         note: "可冲刺顶刊" }
+    - { min: 7.5, max: 8.5,  target_quartiles: [Q1, Q2],     note: "Q1 有希望" }
+    - { min: 6.5, max: 7.5,  target_quartiles: [Q2, Q3],     note: "稳妥选择" }
+    - { min: 5.5, max: 6.5,  target_quartiles: [Q3, Q4],     note: "先求发表" }
+    - { min: 0.0, max: 5.5,  target_quartiles: [],           note: "建议先补充研究内容" }
+  min_recommendations: 3
+  max_recommendations: 5
+  require_gradient: true   # 推荐中应包含冲刺/稳妥/保底梯度
+
+# ----------------------------------------------------------------------------
+# 掠夺性期刊排查信号（S4 必须对照检查）
+# ----------------------------------------------------------------------------
+predatory_signals:
+  - 承诺极短审稿周期（如 "peer review within 72 hours"）
+  - 邮件主动约稿且措辞夸张
+  - 编委名单无法核实或成员不知情
+  - 收录声明模糊（如自称 "indexed in Google Scholar" 却无 SCIE/Scopus）
+  - APC 与出版质量明显不符
+  - 官网无 ISSN 或 ISSN 无法在 portal.issn.org 查到
+  - 期刊名高度模仿知名期刊
+verification_sources:
+  - "Web of Science Master Journal List (mjl.clarivate.com)"
+  - "Scopus Source List"
+  - "DOAJ (doaj.org)"
+  - "portal.issn.org"
+
+# ============================================================================
+journals:
+
+  # -------------------- 应用数学 / 建模 --------------------
+  - id: apm-elsevier
+    name: Applied Mathematical Modelling
+    publisher: Elsevier
+    issn: "0307-904X"
+    scope_tags: [applied-mathematics, mathematical-modelling, simulation, optimization, systems-engineering]
+    method_tags: [ode-pde, numerical-simulation, optimization, statistical-modelling, sensitivity-analysis]
+    impact_factor: { value: 4.4, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Mathematics, Applied"
+    review_weeks: [10, 20]
+    open_access: hybrid
+    template: { latex: "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions", docx: null, bundled_fallback: elsevier-generic }
+    constraints: { max_words: null, abstract_max_words: 250, max_keywords: 6, reference_style: "numbered (elsarticle-num)" }
+    submission_url: "https://www2.cloud.editorialmanager.com/apm/"
+    notes: "偏好有明确工程/产业应用背景的建模工作。纯理论推导、缺少真实数据验证的稿件易被拒。数学建模竞赛类选题改写后契合度高。"
+
+  - id: mathematics-mdpi
+    name: Mathematics
+    publisher: MDPI
+    issn: "2227-7390"
+    scope_tags: [applied-mathematics, mathematical-modelling, optimization, computational-science, data-science]
+    method_tags: [ode-pde, optimization, statistical-modelling, machine-learning, graph-theory, fuzzy-logic]
+    impact_factor: { value: 2.3, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q2
+    jcr_category: "Mathematics"
+    review_weeks: [3, 8]
+    open_access: gold
+    apc: { amount: 2600, currency: CHF, note: "以官网为准，常有折扣" }
+    template: { latex: "https://www.mdpi.com/authors/latex", docx: "https://www.mdpi.com/authors/layout", bundled_fallback: null }
+    constraints: { abstract_max_words: 200, max_keywords: 10, reference_style: "numbered (MDPI)", requires_data_availability: true }
+    submission_url: "https://susy.mdpi.com/"
+    notes: "审稿快、接受面宽，适合首次发表或时间紧张。需注意 APC 较高，且部分单位对 MDPI 认可度有保留——投稿前确认本单位政策。"
+
+  - id: mpe-hindawi
+    name: Mathematical Problems in Engineering
+    publisher: Wiley/Hindawi
+    issn: "1024-123X"
+    scope_tags: [applied-mathematics, mathematical-modelling, industrial-engineering, control-theory, simulation]
+    method_tags: [optimization, numerical-simulation, metaheuristics, statistical-modelling, dynamical-systems]
+    impact_factor: { value: null, year: null, source: "曾被剔除，当前收录状态需核实", retrieved: "2026-08-19" }
+    quartile: null
+    jcr_category: "Engineering, Multidisciplinary"
+    review_weeks: [6, 14]
+    open_access: gold
+    template: { latex: null, docx: null, bundled_fallback: null }
+    notes: "⚠️ 该刊历史上曾出现收录状态变动，投稿前务必到 Web of Science Master Journal List 核实当前是否被 SCIE 收录。本库保留条目仅为提示核查，不构成推荐。"
+    flags: [requires_indexing_verification]
+
+  - id: chaos-solitons
+    name: Chaos, Solitons & Fractals
+    publisher: Elsevier
+    issn: "0960-0779"
+    scope_tags: [applied-mathematics, complex-networks, mathematical-modelling, epidemiology]
+    method_tags: [dynamical-systems, ode-pde, graph-theory, cellular-automata, stochastic-processes]
+    impact_factor: { value: 5.3, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Mathematics, Interdisciplinary Applications"
+    review_weeks: [8, 16]
+    open_access: hybrid
+    template: { latex: "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions", docx: null, bundled_fallback: elsevier-generic }
+    notes: "适合非线性动力学、混沌、分形、传染病动力学建模。要求有较强的数学深度，纯数值实验难过。"
+
+  # -------------------- 运筹 / 优化 --------------------
+  - id: ejor-elsevier
+    name: European Journal of Operational Research
+    publisher: Elsevier
+    issn: "0377-2217"
+    scope_tags: [operations-research, optimization, decision-science, supply-chain, industrial-engineering]
+    method_tags: [integer-programming, linear-programming, multi-objective-optimization, game-theory, queueing-theory, metaheuristics]
+    impact_factor: { value: 6.0, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Operations Research & Management Science"
+    review_weeks: [16, 40]
+    open_access: hybrid
+    template: { latex: "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions", docx: null, bundled_fallback: elsevier-generic }
+    constraints: { abstract_max_words: 200, max_keywords: 6, reference_style: "author-year (elsarticle-harv)" }
+    notes: "OR 领域旗舰刊。要求方法论有实质创新（新模型/新算法/新理论结果），单纯把已有方法用到新场景通常被拒。审稿周期长。"
+
+  - id: cor-elsevier
+    name: Computers & Operations Research
+    publisher: Elsevier
+    issn: "0305-0548"
+    scope_tags: [operations-research, optimization, computational-science, supply-chain, transportation]
+    method_tags: [integer-programming, metaheuristics, multi-objective-optimization, graph-theory, monte-carlo]
+    impact_factor: { value: 4.6, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Operations Research & Management Science"
+    review_weeks: [12, 28]
+    open_access: hybrid
+    template: { latex: "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions", docx: null, bundled_fallback: elsevier-generic }
+    notes: "偏好算法设计 + 严谨的计算实验（含 benchmark 对比、统计检验）。竞赛类优化建模改写后契合度较好，但必须补齐与已有算法的对比实验。"
+
+  - id: eswa-elsevier
+    name: Expert Systems with Applications
+    publisher: Elsevier
+    issn: "0957-4174"
+    scope_tags: [decision-science, machine-learning-applications, data-science, industrial-engineering, optimization]
+    method_tags: [machine-learning, deep-learning, fuzzy-logic, ahp-topsis, metaheuristics, statistical-modelling]
+    impact_factor: { value: 7.5, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Computer Science, Artificial Intelligence"
+    review_weeks: [10, 24]
+    open_access: hybrid
+    template: { latex: "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions", docx: null, bundled_fallback: elsevier-generic }
+    notes: "接受面较宽，对「方法 + 真实应用」组合友好。要求有实际数据集与充分的对比基线。近年拒稿率上升，需强调应用价值与新颖性。"
+
+  - id: annals-or
+    name: Annals of Operations Research
+    publisher: Springer
+    issn: "0254-5330"
+    scope_tags: [operations-research, optimization, decision-science, supply-chain, risk-analysis]
+    method_tags: [integer-programming, game-theory, stochastic-processes, data-envelopment-analysis, multi-objective-optimization]
+    impact_factor: { value: 4.4, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q2
+    jcr_category: "Operations Research & Management Science"
+    review_weeks: [16, 36]
+    open_access: hybrid
+    template: { latex: "https://www.springernature.com/gp/authors/campaigns/latex-author-support", docx: null, bundled_fallback: springer-generic }
+    notes: "常出专题（special issue），投专题可显著缩短周期并提高命中率。建议先查看当前开放的 special issue 列表。"
+
+  - id: jors-taylor
+    name: Journal of the Operational Research Society
+    publisher: Taylor & Francis
+    issn: "0160-5682"
+    scope_tags: [operations-research, decision-science, industrial-engineering, simulation]
+    method_tags: [simulation, linear-programming, queueing-theory, statistical-modelling, agent-based-modelling]
+    impact_factor: { value: 2.7, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q3
+    jcr_category: "Operations Research & Management Science"
+    review_weeks: [12, 30]
+    open_access: hybrid
+    template: { latex: "https://www.tandfonline.com/journals/tjor20/for-authors", docx: null, bundled_fallback: null }
+    notes: "对实践导向的 OR 应用较友好，接受 case study 类稿件，适合有真实企业/政府数据的建模工作。"
+
+  # -------------------- 交通 / 能源 / 环境 --------------------
+  - id: trc-elsevier
+    name: "Transportation Research Part C: Emerging Technologies"
+    publisher: Elsevier
+    issn: "0968-090X"
+    scope_tags: [transportation, urban-planning, optimization, machine-learning-applications, simulation]
+    method_tags: [deep-learning, time-series, agent-based-modelling, integer-programming, graph-theory]
+    impact_factor: { value: 7.6, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Transportation Science & Technology"
+    review_weeks: [12, 26]
+    open_access: hybrid
+    template: { latex: "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions", docx: null, bundled_fallback: elsevier-generic }
+    notes: "交通类建模首选之一。要求有真实交通数据（不接受纯仿真无实证）。竞赛中的交通流、路径规划类选题改写空间大。"
+
+  - id: energy-elsevier
+    name: Energy
+    publisher: Elsevier
+    issn: "0360-5442"
+    scope_tags: [energy-systems, optimization, environmental-modelling, systems-engineering]
+    method_tags: [optimization, time-series, machine-learning, numerical-simulation, sensitivity-analysis]
+    impact_factor: { value: 9.0, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Thermodynamics / Energy & Fuels"
+    review_weeks: [8, 20]
+    open_access: hybrid
+    template: { latex: "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions", docx: null, bundled_fallback: elsevier-generic }
+    notes: "能源系统建模、负荷预测、能源规划类适配。要求政策/工程意义明确，需有敏感性分析与情景分析。"
+
+  - id: apen-elsevier
+    name: Applied Energy
+    publisher: Elsevier
+    issn: "0306-2619"
+    scope_tags: [energy-systems, optimization, environmental-modelling, machine-learning-applications]
+    method_tags: [optimization, machine-learning, time-series, numerical-simulation, monte-carlo]
+    impact_factor: { value: 10.1, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Energy & Fuels"
+    review_weeks: [8, 18]
+    open_access: hybrid
+    template: { latex: "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions", docx: null, bundled_fallback: elsevier-generic }
+    notes: "门槛高，要求创新性与实际影响力兼备。Desk reject 率高，建议先评估是否有足够的新颖性再投。"
+
+  - id: jclepro-elsevier
+    name: Journal of Cleaner Production
+    publisher: Elsevier
+    issn: "0959-6526"
+    scope_tags: [environmental-modelling, supply-chain, industrial-engineering, decision-science, energy-systems]
+    method_tags: [optimization, multi-objective-optimization, data-envelopment-analysis, ahp-topsis, statistical-modelling]
+    impact_factor: { value: 9.7, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Environmental Sciences / Green & Sustainable Science"
+    review_weeks: [10, 24]
+    open_access: hybrid
+    template: { latex: "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions", docx: null, bundled_fallback: elsevier-generic }
+    notes: "必须有明确的可持续性/清洁生产落点，否则 scope 不符直接拒。绿色供应链、碳排放建模类适配好。"
+
+  - id: env-model-software
+    name: Environmental Modelling & Software
+    publisher: Elsevier
+    issn: "1364-8152"
+    scope_tags: [environmental-modelling, computational-science, simulation, data-science]
+    method_tags: [ode-pde, numerical-simulation, bayesian-inference, sensitivity-analysis, machine-learning]
+    impact_factor: { value: 4.8, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Environmental Sciences"
+    review_weeks: [10, 22]
+    open_access: hybrid
+    template: { latex: "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions", docx: null, bundled_fallback: elsevier-generic }
+    notes: "强调模型与软件的可复现性，要求提供代码/数据可用性声明。可复现性维度得分高的稿件优势明显。"
+
+  # -------------------- 工业工程 / 制造 / 供应链 --------------------
+  - id: ijpe-elsevier
+    name: International Journal of Production Economics
+    publisher: Elsevier
+    issn: "0925-5273"
+    scope_tags: [supply-chain, manufacturing, industrial-engineering, operations-research, decision-science]
+    method_tags: [integer-programming, game-theory, stochastic-processes, statistical-modelling, simulation]
+    impact_factor: { value: 9.8, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Engineering, Industrial"
+    review_weeks: [14, 32]
+    open_access: hybrid
+    template: { latex: "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions", docx: null, bundled_fallback: elsevier-generic }
+    notes: "要求有经济学/管理学理论支撑，纯技术优化模型不够。需明确管理启示（managerial implications）。"
+
+  - id: ijpr-taylor
+    name: International Journal of Production Research
+    publisher: Taylor & Francis
+    issn: "0020-7543"
+    scope_tags: [manufacturing, supply-chain, industrial-engineering, operations-research, simulation]
+    method_tags: [integer-programming, metaheuristics, simulation, machine-learning, multi-objective-optimization]
+    impact_factor: { value: 7.0, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Engineering, Industrial"
+    review_weeks: [12, 28]
+    open_access: hybrid
+    template: { latex: "https://www.tandfonline.com/journals/tprs20/for-authors", docx: null, bundled_fallback: null }
+    notes: "生产调度、车间排程、供应链网络设计类适配好。对算法类稿件要求 benchmark 对比充分。"
+
+  - id: ress-elsevier
+    name: Reliability Engineering & System Safety
+    publisher: Elsevier
+    issn: "0951-8320"
+    scope_tags: [reliability, risk-analysis, systems-engineering, industrial-engineering]
+    method_tags: [stochastic-processes, bayesian-inference, monte-carlo, statistical-modelling, sensitivity-analysis]
+    impact_factor: { value: 9.4, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Engineering, Industrial"
+    review_weeks: [10, 24]
+    open_access: hybrid
+    template: { latex: "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions", docx: null, bundled_fallback: elsevier-generic }
+    notes: "可靠性、风险评估、维护策略优化类首选。要求不确定性量化严谨。"
+
+  # -------------------- 控制 / 系统 / 网络 --------------------
+  - id: ieee-tits
+    name: IEEE Transactions on Intelligent Transportation Systems
+    publisher: IEEE
+    issn: "1524-9050"
+    scope_tags: [transportation, control-theory, machine-learning-applications, urban-planning, complex-networks]
+    method_tags: [deep-learning, graph-theory, optimization, time-series, agent-based-modelling]
+    impact_factor: { value: 7.9, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Engineering, Electrical & Electronic"
+    review_weeks: [12, 30]
+    open_access: hybrid
+    template: { latex: "https://template-selector.ieee.org/", docx: "https://template-selector.ieee.org/", bundled_fallback: ieee-generic }
+    constraints: { max_pages: 14, abstract_max_words: 250, reference_style: "IEEEtran" }
+    notes: "IEEE 格式严格（双栏、页数限制、图表规范）。超页需付费。模板适配阶段需特别注意公式在双栏下的换行。"
+
+  - id: ieee-tsmc
+    name: "IEEE Transactions on Systems, Man, and Cybernetics: Systems"
+    publisher: IEEE
+    issn: "2168-2216"
+    scope_tags: [systems-engineering, decision-science, control-theory, complex-networks, optimization]
+    method_tags: [fuzzy-logic, game-theory, machine-learning, optimization, graph-theory]
+    impact_factor: { value: 8.6, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Automation & Control Systems"
+    review_weeks: [14, 32]
+    open_access: hybrid
+    template: { latex: "https://template-selector.ieee.org/", docx: null, bundled_fallback: ieee-generic }
+    constraints: { max_pages: 14, reference_style: "IEEEtran" }
+    notes: "系统科学、决策系统、人机系统类。理论深度要求高。"
+
+  - id: physica-a
+    name: "Physica A: Statistical Mechanics and its Applications"
+    publisher: Elsevier
+    issn: "0378-4371"
+    scope_tags: [complex-networks, finance-economics, epidemiology, applied-mathematics, urban-planning]
+    method_tags: [stochastic-processes, graph-theory, agent-based-modelling, statistical-modelling, cellular-automata]
+    impact_factor: { value: 2.8, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q2
+    jcr_category: "Physics, Multidisciplinary"
+    review_weeks: [8, 18]
+    open_access: hybrid
+    template: { latex: "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions", docx: null, bundled_fallback: elsevier-generic }
+    notes: "复杂网络、社会经济系统统计物理建模的传统去处。对交叉学科包容度高，适合竞赛类社会系统建模改写。"
+
+  # -------------------- 生物数学 / 流行病 --------------------
+  - id: math-biosci
+    name: Mathematical Biosciences and Engineering
+    publisher: AIMS
+    issn: "1551-0018"
+    scope_tags: [biomathematics, epidemiology, applied-mathematics, mathematical-modelling]
+    method_tags: [ode-pde, dynamical-systems, stochastic-processes, bayesian-inference, sensitivity-analysis]
+    impact_factor: { value: 2.6, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q2
+    jcr_category: "Mathematical & Computational Biology"
+    review_weeks: [6, 14]
+    open_access: gold
+    template: { latex: "https://www.aimspress.com/aimspress-data/mbe/instructions.html", docx: null, bundled_fallback: null }
+    notes: "传染病动力学、种群模型、生物系统建模。审稿相对高效，适合 SIR 类竞赛选题改写。"
+
+  - id: infect-dis-model
+    name: Infectious Disease Modelling
+    publisher: KeAi/Elsevier
+    issn: "2468-0427"
+    scope_tags: [epidemiology, mathematical-modelling, biomathematics, risk-analysis]
+    method_tags: [ode-pde, stochastic-processes, bayesian-inference, time-series, monte-carlo]
+    impact_factor: { value: 8.9, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q1
+    jcr_category: "Mathematical & Computational Biology"
+    review_weeks: [6, 16]
+    open_access: gold
+    template: { latex: null, docx: null, bundled_fallback: elsevier-generic }
+    notes: "传染病建模专刊，要求有真实疫情数据拟合与政策含义。纯理论模型不够。"
+
+  # -------------------- 通用 / 兜底 --------------------
+  - id: scientific-reports
+    name: Scientific Reports
+    publisher: Nature Portfolio
+    issn: "2045-2322"
+    scope_tags: [applied-mathematics, mathematical-modelling, data-science, complex-networks,
+                 environmental-modelling, epidemiology, energy-systems]
+    method_tags: [statistical-modelling, machine-learning, numerical-simulation, optimization, graph-theory]
+    impact_factor: { value: 3.8, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q2
+    jcr_category: "Multidisciplinary Sciences"
+    review_weeks: [10, 26]
+    open_access: gold
+    apc: { amount: 2290, currency: USD, note: "以官网为准" }
+    template: { latex: "https://www.nature.com/srep/author-instructions", docx: "https://www.nature.com/srep/author-instructions", bundled_fallback: null }
+    constraints: { abstract_max_words: 200, requires_data_availability: true }
+    submission_url: "https://mts-srep.nature.com/"
+    notes: "学科覆盖极广，是跨领域建模的稳妥兜底选项。只要求技术上可靠，不要求「重要性」。APC 较高。"
+
+  - id: plos-one
+    name: PLOS ONE
+    publisher: PLOS
+    issn: "1932-6203"
+    scope_tags: [applied-mathematics, mathematical-modelling, epidemiology, environmental-modelling, data-science]
+    method_tags: [statistical-modelling, ode-pde, machine-learning, monte-carlo, agent-based-modelling]
+    impact_factor: { value: 2.9, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q2
+    jcr_category: "Multidisciplinary Sciences"
+    review_weeks: [10, 24]
+    open_access: gold
+    template: { latex: "https://journals.plos.org/plosone/s/latex", docx: "https://journals.plos.org/plosone/s/submission-guidelines", bundled_fallback: null }
+    constraints: { abstract_max_words: 300, requires_data_availability: true }
+    notes: "只评估技术严谨性，不评估新颖性——这对创新性得分偏低但方法扎实的稿件是重要机会。要求数据完全公开。"
+
+  - id: heliyon-elsevier
+    name: Heliyon
+    publisher: Elsevier
+    issn: "2405-8440"
+    scope_tags: [applied-mathematics, mathematical-modelling, data-science, energy-systems, environmental-modelling]
+    method_tags: [statistical-modelling, optimization, machine-learning, numerical-simulation]
+    impact_factor: { value: 3.4, year: 2024, source: "seed-data JCR≈2024 (UNVERIFIED)", retrieved: "2026-08-19" }
+    quartile: Q2
+    jcr_category: "Multidisciplinary Sciences"
+    review_weeks: [6, 16]
+    open_access: gold
+    template: { latex: "https://www.cell.com/heliyon/authors", docx: null, bundled_fallback: elsevier-generic }
+    notes: "多学科兜底选项，审稿较快。近年投稿量激增导致周期波动，且部分单位认可度有争议——投稿前确认本单位政策。"

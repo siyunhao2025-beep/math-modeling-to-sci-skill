@@ -1,0 +1,156 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/config/schema/validation.schema.json",
+  "title": "Validation Round Result",
+  "description": "S6 每一轮校验的输出。各检查器产出 findings 片段，编排器汇总为本对象。",
+  "type": "object",
+  "required": ["schema_version", "round", "validated_at", "checkers", "summary", "verdict"],
+  "additionalProperties": false,
+
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0" },
+    "round": { "type": "integer", "minimum": 1 },
+    "validated_at": { "type": "string", "format": "date-time" },
+    "target_build": { "type": ["string", "null"], "description": "被校验的构建目录" },
+    "target_journal": { "type": ["string", "null"] },
+
+    "checkers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "findings"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "enum": ["validate_ir", "check_citations", "check_figures_tables",
+                     "check_equations", "latex_compile_check", "check_language",
+                     "check_journal_constraints", "check_cjk_residue", "cross_validate"]
+          },
+          "status": { "enum": ["pass", "fail", "skipped", "error"] },
+          "skip_reason": { "type": ["string", "null"], "description": "status=skipped 时必填" },
+          "duration_ms": { "type": ["integer", "null"] },
+          "findings": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/finding" }
+          }
+        }
+      }
+    },
+
+    "summary": {
+      "type": "object",
+      "required": ["error_count", "warning_count", "info_count", "auto_fixed_count"],
+      "additionalProperties": false,
+      "properties": {
+        "error_count": { "type": "integer", "minimum": 0 },
+        "warning_count": { "type": "integer", "minimum": 0 },
+        "info_count": { "type": "integer", "minimum": 0 },
+        "auto_fixed_count": { "type": "integer", "minimum": 0 },
+        "unresolved_error_ids": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "checkers_skipped": { "type": "array", "items": { "type": "string" }, "default": [] }
+      }
+    },
+
+    "verdict": {
+      "enum": ["PASS", "PASS_WITH_WARNINGS", "FAIL_RETRY", "FAIL_BLOCKED"],
+      "description": "PASS=零 error；FAIL_RETRY=尚有可修项且未达轮次上限；FAIL_BLOCKED=达上限仍有 error，成稿降级为草稿"
+    },
+
+    "next_action": {
+      "type": ["string", "null"],
+      "enum": ["proceed_to_s7", "retry_round", "rollback_to_s5", "rollback_to_s2", "ask_human", null]
+    },
+
+    "cross_validation": {
+      "type": ["object", "null"],
+      "description": "横向交叉验证结果，独立于单项检查器",
+      "additionalProperties": false,
+      "properties": {
+        "citation_bidirectional_diff": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "cited_not_in_bib": { "type": "array", "items": { "type": "string" }, "default": [] },
+            "in_bib_not_cited": { "type": "array", "items": { "type": "string" }, "default": [] }
+          }
+        },
+        "numeric_consistency": {
+          "type": ["object", "null"],
+          "description": "改写后数值与原始 IR 的比对结果。任何差异都是 error。",
+          "additionalProperties": false,
+          "properties": {
+            "checked_count": { "type": "integer", "minimum": 0 },
+            "mismatches": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["location", "original", "current"],
+                "additionalProperties": false,
+                "properties": {
+                  "location": { "type": "string" },
+                  "original": { "type": "string" },
+                  "current": { "type": "string" }
+                }
+              },
+              "default": []
+            }
+          }
+        },
+        "orphan_objects": {
+          "type": ["object", "null"],
+          "description": "未被正文引用的公式/图/表",
+          "additionalProperties": false,
+          "properties": {
+            "equations": { "type": "array", "items": { "type": "string" }, "default": [] },
+            "figures": { "type": "array", "items": { "type": "string" }, "default": [] },
+            "tables": { "type": "array", "items": { "type": "string" }, "default": [] }
+          }
+        },
+        "symbol_consistency": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "undefined_symbols": { "type": "array", "items": { "type": "string" }, "default": [] },
+            "inconsistent_usage": { "type": "array", "items": { "type": "string" }, "default": [] }
+          }
+        }
+      }
+    }
+  },
+
+  "definitions": {
+    "finding": {
+      "type": "object",
+      "required": ["id", "severity", "code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "稳定 id，跨轮次可比对是否已修复" },
+        "severity": {
+          "enum": ["error", "warning", "info"],
+          "description": "error 会阻塞 G6；warning 记入报告但不阻塞"
+        },
+        "code": {
+          "type": "string",
+          "description": "机器可读错误码，如 CITE-001 / FIG-003 / EQ-002 / FMT-005"
+        },
+        "message": { "type": "string" },
+        "location": { "type": ["string", "null"], "description": "如 main.tex:L214 或 sec-3/blk-12" },
+        "expected": { "type": ["string", "null"] },
+        "actual": { "type": ["string", "null"] },
+        "rule_ref": {
+          "type": ["string", "null"],
+          "description": "依据的规则来源，如 style-rules.yaml#tense 或期刊 Guide for Authors"
+        },
+        "auto_fixable": { "type": "boolean", "default": false },
+        "auto_fixed": { "type": "boolean", "default": false },
+        "fix_applied": { "type": ["string", "null"] },
+        "requires_author": {
+          "type": "boolean", "default": false,
+          "description": "true 表示需作者决策，不可自动修复"
+        },
+        "first_seen_round": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    }
+  }
+}

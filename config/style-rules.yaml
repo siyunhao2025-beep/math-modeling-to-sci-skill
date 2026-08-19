@@ -1,0 +1,329 @@
+# ============================================================================
+# style-rules.yaml — 学术语言规范规则
+#
+# 消费者：
+#   - prompts/02-academic-rewrite.md  （改写时遵循）
+#   - scripts/validate/check_language.py（S6 校验时检测）
+#
+# severity 语义：
+#   error   → 阻塞 G6，必须修
+#   warning → 记入报告，不阻塞
+#   info    → 建议性提示
+# ============================================================================
+
+meta:
+  version: "1.0.0"
+  target_variety: en-US        # 或 en-GB，需与目标期刊一致
+  note: |
+    本文件是"默认规范"，目标期刊的 Guide for Authors 优先级更高。
+    S5 阶段若发现期刊有冲突要求，以期刊要求为准并记录 override。
+
+# ============================================================================
+# 一、时态规范
+# ============================================================================
+tense:
+  rules:
+    - section_role: abstract
+      guideline: 背景用现在时；本文所做工作用现在时或过去时（全文统一）；结论用现在时
+      severity: warning
+    - section_role: introduction
+      guideline: 已有知识用现在时（"X is widely used"）；前人具体工作用过去时（"Zhang et al. proposed"）
+      severity: warning
+    - section_role: [methodology, model_formulation, algorithm]
+      guideline: 描述模型与方法用现在时（"The model assumes..."）；描述所执行的步骤用过去时
+      severity: warning
+    - section_role: [experiments, results]
+      guideline: 描述所做实验与所得结果用过去时（"We conducted..."、"The accuracy reached..."）
+      severity: warning
+    - section_role: [discussion, conclusion]
+      guideline: 解读结果用现在时；回顾本文工作用过去时；未来工作用将来时或 may/could
+      severity: warning
+  consistency:
+    rule: 同一节内时态不得随意切换
+    severity: warning
+
+# ============================================================================
+# 二、语态与人称
+# ============================================================================
+voice:
+  passive_ratio:
+    # 过度被动是中文作者的典型问题，全被动可读性差
+    recommended_range: [0.25, 0.50]
+    severity: warning
+    message: 被动语态占比偏离建议区间，考虑调整以提升可读性
+  first_person:
+    policy: allowed_moderate
+    guideline: |
+      现代 SCI 论文普遍接受 "we"，用于陈述本文所做的选择与贡献。
+      规则：
+      - 用 "we" 陈述作者的行为与决策（we propose / we assume / we compare）
+      - 不用 "we" 陈述客观事实（错：we can see the value increases；对：the value increases）
+      - 避免 "I"（除单作者且期刊允许）
+      - 避免 "our paper does X"，改为 "we do X" 或 "this paper does X"
+    forbidden:
+      - pattern: '\bI\s+(propose|present|show|argue)\b'
+        message: 单人称 I 在多作者论文中不适用
+        severity: error
+      - pattern: '\bwe can (see|observe|find) that\b'
+        message: 冗余表达，直接陈述事实
+        severity: warning
+        suggestion: 删除 "we can see that"，直接给出结论
+
+# ============================================================================
+# 三、禁用与替换词表
+# ============================================================================
+lexicon:
+
+  # ---- 建模报告特有的口语化/竞赛体表达 → 学术表达 ----
+  competition_style_to_academic:
+    - from: ["本文首先...然后...最后", "首先我们", "接下来我们"]
+      to: 用逻辑连接词组织（Furthermore / Subsequently / In contrast），避免流水账式列举
+      severity: warning
+    - from: ["问题一", "问题二", "问题三", "Problem 1", "Question 1"]
+      to: 改为按研究内容命名的小节标题（如 "Demand Forecasting Model"）
+      severity: error
+      note: 竞赛题号结构是转论文时最刺眼的痕迹，必须彻底重构
+    - from: ["题目要求", "题目给出", "as required by the problem"]
+      to: 改为研究目标的自主陈述（"This study aims to..."）
+      severity: error
+    - from: ["经过查阅资料", "通过百度/知网查询", "查阅文献得知"]
+      to: 改为规范引用（"Prior work [12] reports that..."）
+      severity: error
+    - from: ["我们的模型很好地", "效果非常好", "非常显著", "完美地"]
+      to: 用具体量化表述（"reduced the error by 12.3%"）
+      severity: error
+      note: 无量化支撑的效果宣称是审稿人第一个攻击点
+    - from: ["综上所述，本文很好地解决了", "圆满完成"]
+      to: 客观总结贡献并主动指出局限
+      severity: error
+
+  # ---- 学术写作通用禁用词 ----
+  forbidden_words:
+    - words: ["obviously", "clearly", "evidently", "it is well known that"]
+      reason: 对读者不友好；若真的显然就不必写，若不显然则需论证
+      severity: warning
+    - words: ["very", "quite", "really", "extremely", "a lot of", "huge", "tremendous"]
+      reason: 主观程度副词，用具体数值替代
+      severity: warning
+    - words: ["novel", "innovative", "state-of-the-art"]
+      reason: 自我表扬式形容词应克制，让贡献本身说话；每篇最多出现 1-2 次
+      severity: info
+      max_occurrences: 2
+    - words: ["perfect", "perfectly", "optimal solution is found"]
+      reason: 绝对化表述，除非有严格最优性证明
+      severity: warning
+    - words: ["etc.", "and so on", "and so forth"]
+      reason: 学术写作应完整列举或明确说明范围
+      severity: warning
+    - words: ["nowadays", "in today's world", "with the development of society"]
+      reason: 空泛开场，直接切入研究问题
+      severity: warning
+      note: 中文作者的高频开头模式，审稿人一眼识别
+
+  # ---- 模糊限定词：该用的时候必须用 ----
+  hedging:
+    policy: required_for_unproven_claims
+    guideline: |
+      未经严格证明的推断必须加限定词，这是学术诚信而非软弱：
+      推荐：suggest / indicate / may / could / is likely to / appears to /
+            these results are consistent with
+      避免过度：一句话内不超过一个限定词（不要 "may possibly potentially"）
+    over_hedging:
+      pattern: '\b(may|might|could|possibly|potentially|perhaps)\b.*\b(may|might|could|possibly|potentially|perhaps)\b'
+      message: 同句多重限定，削弱表达
+      severity: warning
+    missing_hedging_triggers:
+      # 这些强断言若无对应证据支撑，须加限定词
+      - pattern: '\b(proves|demonstrates conclusively|confirms) that\b'
+        require_backing: [experiments, results]
+        severity: warning
+
+  # ---- 术语一致性 ----
+  terminology:
+    rule: 同一概念全文用同一术语，首次出现给全称+缩写，之后统一用缩写
+    abbreviation_policy:
+      first_use: "full name (ABBR)"
+      min_occurrences_to_abbreviate: 3
+      forbid_abbrev_in: [title, abstract_first_sentence]
+      severity: warning
+    common_inconsistencies:
+      - ["model", "modeling", "modelling"]     # en-US 用 modeling，en-GB 用 modelling，全文统一
+      - ["optimize", "optimise"]
+      - ["analyze", "analyse"]
+      - ["behavior", "behaviour"]
+      - ["data set", "dataset"]
+      - ["time step", "timestep", "time-step"]
+
+# ============================================================================
+# 四、句子与段落结构
+# ============================================================================
+structure:
+  sentence:
+    max_words: 40
+    severity: warning
+    message: 句子过长，建议拆分
+    avg_target: [18, 25]
+  paragraph:
+    max_sentences: 8
+    min_sentences: 2
+    severity: info
+    topic_sentence_required: true
+    guideline: 每段首句应为主题句，段落围绕单一论点
+  section:
+    min_words: 80
+    severity: warning
+    message: 章节过短，考虑合并或充实内容
+  transitions:
+    guideline: 段落间需有逻辑衔接，避免内容跳跃
+    overuse_check:
+      # 连接词滥用检测
+      words: ["However", "Therefore", "Moreover", "Furthermore", "In addition"]
+      max_ratio_per_paragraph_start: 0.5
+      severity: info
+
+# ============================================================================
+# 五、数字、单位、公式的语言规范
+# ============================================================================
+numerals:
+  rules:
+    - rule: 句首数字用英文单词拼出（"Twenty samples were..."）
+      severity: warning
+    - rule: 10 以下整数在非技术语境用单词，技术数值一律用阿拉伯数字
+      severity: info
+    - rule: 数值与单位间加不换行空格（10~\text{kg}），百分号紧贴数字（12.3%）
+      severity: warning
+    - rule: 全文小数位数一致（如统一保留 2 位），不得同一指标出现 3.1 与 3.14
+      severity: error
+      note: 数值呈现不一致是审稿人质疑数据可靠性的常见触发点
+    - rule: 大数用千分位或科学计数法，全文统一
+      severity: warning
+    - rule: 统一使用 SI 单位；非 SI 单位须在首次出现时给出换算
+      severity: warning
+
+equations:
+  language_rules:
+    - rule: 公式是句子的一部分，前后需有标点与引导语
+      example: "The demand is modeled as\n\\begin{equation}...\\end{equation}\nwhere $d_t$ denotes..."
+      severity: warning
+    - rule: 公式后紧跟 where 从句定义所有新符号
+      severity: error
+      message: 公式中出现未定义符号
+    - rule: 引用公式用 "Eq. (3)" 或 "(3)"，全文统一；句首用 "Equation (3)"
+      severity: warning
+    - rule: 不要在正文中说 "the following formula"，直接用编号引用
+      severity: info
+
+captions:
+  figure:
+    position: below
+    format: "Fig. N. Descriptive caption ending with period."
+    rules:
+      - rule: 图题应自解释，读者不看正文也能理解图在说什么
+        severity: warning
+      - rule: 不要在图题中写"如图所示"类冗余表述
+        severity: warning
+      - rule: 图题不得只有一个词（如 "Results"）
+        severity: warning
+  table:
+    position: above
+    format: "Table N. Descriptive caption."
+    rules:
+      - rule: 表格用三线表（booktabs），不用竖线
+        severity: warning
+      - rule: 单位放在表头而非每个单元格
+        severity: info
+
+# ============================================================================
+# 六、CJK 与本地化残留检测（S6 硬检查）
+# ============================================================================
+localization:
+  cjk_residue:
+    patterns:
+      - '[\u4e00-\u9fff]'          # 中日韩统一汉字
+      - '[\u3000-\u303f]'          # CJK 标点
+      - '[\uff00-\uffef]'          # 全角字符
+    severity: error
+    scope: [body, captions, bib_titles, keywords, headings, table_cells]
+    message: 目标语言为英文时，成稿不得残留 CJK 字符
+    exceptions:
+      - 参考文献中确实为中文出版物的原始标题（须同时给出英译）
+  fullwidth_punctuation:
+    # 用 Unicode 码点表示，避免编辑器/编码差异导致规则失效
+    codepoints:
+      - "\uFF0C"   # ，全角逗号
+      - "\u3002"   # 。句号
+      - "\uFF1B"   # ；全角分号
+      - "\uFF1A"   # ：全角冒号
+      - "\uFF08"   # （全角左括号
+      - "\uFF09"   # ）全角右括号
+      - "\u3000"   # 　全角空格
+      - "\u201C"   # 左双引号
+      - "\u201D"   # 右双引号
+      - "\u2018"   # 左单引号
+      - "\u2019"   # 右单引号
+      - "\uFF01"   # ！全角感叹号
+      - "\uFF1F"   # ？全角问号
+      - "\u3001"   # 、顿号
+    severity: error
+    auto_fixable: true
+    message: 全角标点须替换为半角
+  spacing:
+    rule: 英文中不得出现中文排版习惯的空格缺失或多余空格
+    severity: warning
+
+# ============================================================================
+# 七、必需的声明性章节（多数期刊要求）
+# ============================================================================
+required_statements:
+  - id: data_availability
+    trigger: journal.constraints.requires_data_availability == true
+    severity: error
+    template: |
+      Data Availability Statement: The data supporting the findings of this study
+      are available from [source]. [Or: are included within the article.]
+    note: 内容须真实，不得声称数据可得而实际不提供
+  - id: conflict_of_interest
+    always_required: true
+    severity: error
+    template: "The authors declare no conflict of interest."
+  - id: funding
+    condition: if funding exists
+    severity: warning
+  - id: author_contributions
+    trigger: journal requires CRediT
+    severity: warning
+  - id: ai_disclosure
+    severity: error
+    always_required: true
+    note: |
+      多数期刊要求披露 AI 辅助写作。本工具生成的稿件必须包含相应声明，
+      具体措辞按目标期刊政策撰写。这是不可省略的诚信要求。
+    template_hint: |
+      During the preparation of this work the author(s) used [tool] in order to
+      [purpose]. After using this tool, the author(s) reviewed and edited the
+      content as needed and take full responsibility for the content of the publication.
+
+# ============================================================================
+# 八、检查器执行配置
+# ============================================================================
+checker_config:
+  enabled_checks:
+    - forbidden_words
+    - competition_style_residue
+    - cjk_residue
+    - fullwidth_punctuation
+    - sentence_length
+    - decimal_consistency
+    - abbreviation_first_use
+    - undefined_symbols
+    - caption_quality
+    - required_statements
+  # 检测但不自动修复的项（改动可能影响语义）
+  never_auto_fix:
+    - hedging
+    - claim_strength
+    - terminology_choice
+  auto_fixable:
+    - fullwidth_punctuation
+    - numeral_unit_spacing
+    - caption_format

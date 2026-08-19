@@ -1,0 +1,9 @@
+{
+  "template_id": "springer-generic",
+  "publisher": "Springer",
+  "document_class": "sn-jnl",
+  "intended_use": "S5 level-3 fallback when official/publisher templates unavailable",
+  "is_official": false,
+  "notes": "投稿前必须替换为目标期刊官方 sn-jnl 模板与 author guidelines。",
+  "required_packages": ["sn-jnl", "amsmath", "amssymb", "graphicx", "booktabs"]
+}

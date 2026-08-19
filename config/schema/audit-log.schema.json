@@ -1,0 +1,150 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/config/schema/audit-log.schema.json",
+  "title": "Audit Log Event",
+  "description": "audit.jsonl 中单行事件的 schema。文件为 append-only JSONL，每行一个本对象。",
+  "type": "object",
+  "required": ["ts", "run_id", "stage", "event", "actor"],
+  "additionalProperties": false,
+
+  "properties": {
+    "ts": { "type": "string", "format": "date-time", "description": "UTC ISO8601" },
+    "run_id": { "type": "string", "description": "本次运行的唯一标识，同一 workdir 内一致" },
+    "seq": { "type": ["integer", "null"], "minimum": 0, "description": "事件序号，单调递增" },
+
+    "stage": {
+      "enum": ["S0", "S1", "S2", "S3", "S4", "S5", "S6", "S7"],
+      "description": "S0 表示编排器自身事件"
+    },
+    "round": {
+      "type": ["integer", "null"], "minimum": 1,
+      "description": "阶段内轮次（S6 多轮校验、失败重试）"
+    },
+
+    "event": {
+      "enum": ["run_start", "run_end", "stage_start", "stage_end", "gate_decision",
+               "auto_fix", "degrade", "external_call", "rollback", "snapshot",
+               "human_input", "schema_validation", "error", "warning", "note"]
+    },
+
+    "actor": {
+      "type": "string",
+      "description": "触发者：脚本名、提示词名或 'orchestrator' / 'human'"
+    },
+
+    "result": {
+      "type": ["string", "null"],
+      "enum": ["pass", "fail", "partial", "skipped", "success", "timeout", null]
+    },
+
+    "target": {
+      "type": ["string", "null"],
+      "description": "作用对象，如 main.tex:L214 / sec-3 / eq-7 / journal-match.json"
+    },
+
+    "detail": { "type": "string", "description": "人类可读说明" },
+
+    "gate": {
+      "type": ["string", "null"],
+      "enum": ["G1", "G2", "G3", "G4", "G5", "G6", null],
+      "description": "event=gate_decision 时必填"
+    },
+    "gate_metrics": {
+      "type": ["object", "null"],
+      "description": "门控判定所用的实际指标值，用于事后复核",
+      "additionalProperties": true
+    },
+    "action": {
+      "type": ["string", "null"],
+      "enum": ["proceed", "retry", "rollback", "degrade", "block", "ask_human", null],
+      "description": "门控失败后采取的动作"
+    },
+
+    "external": {
+      "type": ["object", "null"],
+      "description": "event=external_call 时记录，保证联网行为可审计",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["web_search", "web_fetch", "doi_lookup", "template_download", "latex_compile"] },
+        "query_or_url": { "type": ["string", "null"] },
+        "status": { "type": ["string", "null"] },
+        "evidence_file": { "type": ["string", "null"], "description": "存证落盘路径" },
+        "duration_ms": { "type": ["integer", "null"] }
+      }
+    },
+
+    "diff": {
+      "type": ["object", "null"],
+      "description": "event=auto_fix 时记录改动前后，保证可回溯",
+      "additionalProperties": false,
+      "properties": {
+        "before": { "type": ["string", "null"] },
+        "after": { "type": ["string", "null"] },
+        "reason": { "type": ["string", "null"] },
+        "reversible": { "type": ["boolean", "null"] }
+      }
+    },
+
+    "degrade_info": {
+      "type": ["object", "null"],
+      "description": "event=degrade 时必填。所有降级都必须在最终报告中如实披露。",
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string", "description": "原计划方案" },
+        "to": { "type": "string", "description": "降级后方案" },
+        "cause": { "type": "string" },
+        "impact": { "type": "string", "description": "对成稿质量的影响" },
+        "must_disclose": { "type": "boolean", "default": true }
+      }
+    },
+
+    "artifacts": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string" },
+          "sha256": { "type": ["string", "null"] },
+          "role": { "type": ["string", "null"], "enum": ["input", "output", "evidence", "snapshot", null] }
+        }
+      },
+      "description": "本事件产出或消费的文件，带哈希以便完整性校验"
+    },
+
+    "error_info": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "type": ["string", "null"] },
+        "message": { "type": ["string", "null"] },
+        "recoverable": { "type": ["boolean", "null"] },
+        "recovery_action": { "type": ["string", "null"] },
+        "traceback_file": { "type": ["string", "null"] }
+      }
+    },
+
+    "duration_ms": { "type": ["integer", "null"], "minimum": 0 },
+    "env": {
+      "type": ["object", "null"],
+      "description": "关键环境信息，仅在 run_start 时记录一次",
+      "additionalProperties": true
+    }
+  },
+
+  "allOf": [
+    {
+      "if": { "properties": { "event": { "const": "gate_decision" } }, "required": ["event"] },
+      "then": { "required": ["gate", "result", "action"] }
+    },
+    {
+      "if": { "properties": { "event": { "const": "degrade" } }, "required": ["event"] },
+      "then": { "required": ["degrade_info"] }
+    },
+    {
+      "if": { "properties": { "event": { "const": "external_call" } }, "required": ["event"] },
+      "then": { "required": ["external"] }
+    }
+  ]
+}

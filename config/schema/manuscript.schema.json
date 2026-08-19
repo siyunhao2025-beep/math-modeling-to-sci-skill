@@ -1,0 +1,391 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/siyunhao2025-beep/math-modeling-to-sci-skill/config/schema/manuscript.schema.json",
+  "title": "Manuscript Intermediate Representation (IR)",
+  "description": "贯穿 S1-S7 全流程的稿件中间表示。S1 产出，S2 改写后仍需符合本 schema。",
+  "type": "object",
+  "required": ["schema_version", "provenance", "meta", "sections"],
+  "additionalProperties": false,
+
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "IR 版本号。不兼容变更时递增，见 docs/architecture.md 的 Schema 演进节。"
+    },
+
+    "provenance": {
+      "type": "object",
+      "description": "来源追溯信息，用于审计与复现。",
+      "required": ["source_file", "source_format", "parsed_at", "parser"],
+      "additionalProperties": false,
+      "properties": {
+        "source_file": { "type": "string", "description": "原始输入文件名" },
+        "source_format": { "enum": ["docx", "latex", "latex-project", "markdown"] },
+        "source_sha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$|^$" },
+        "parsed_at": { "type": "string", "format": "date-time" },
+        "parser": { "type": "string", "description": "解析器名称与版本，如 parse_latex.py@1.0.0" },
+        "stage": {
+          "enum": ["S1", "S2", "S5"],
+          "description": "产出该 IR 的阶段。S2 改写后为 S2。"
+        },
+        "upstream_sha256": {
+          "type": ["string", "null"],
+          "description": "上游 IR 的哈希，用于链式追溯"
+        }
+      }
+    },
+
+    "meta": {
+      "type": "object",
+      "required": ["title", "language"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "title_original": {
+          "type": ["string", "null"],
+          "description": "改写前原标题，S2 填写以便报告做前后对照"
+        },
+        "subtitle": { "type": ["string", "null"] },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "affiliation": { "type": ["string", "null"] },
+              "email": { "type": ["string", "null"] },
+              "orcid": { "type": ["string", "null"] },
+              "corresponding": { "type": "boolean", "default": false },
+              "equal_contribution": { "type": "boolean", "default": false }
+            }
+          },
+          "default": []
+        },
+        "abstract": { "type": ["string", "null"] },
+        "abstract_original": { "type": ["string", "null"] },
+        "keywords": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "language": {
+          "enum": ["zh", "en", "mixed"],
+          "description": "原文主语言。mixed 表示中英混排，S2 必须统一为 en。"
+        },
+        "target_language": { "enum": ["en", "zh"], "default": "en" },
+        "msc_codes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Mathematics Subject Classification 代码",
+          "default": []
+        },
+        "funding": { "type": ["string", "null"] },
+        "word_count": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+
+    "sections": {
+      "type": "array",
+      "description": "章节树的扁平化表示，用 level 表达层级，parent_id 表达归属。",
+      "items": { "$ref": "#/definitions/section" }
+    },
+
+    "equations": {
+      "type": "array",
+      "description": "全文公式索引（与 section.blocks 内的 equation 块交叉引用）",
+      "items": { "$ref": "#/definitions/equation" },
+      "default": []
+    },
+
+    "figures": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/figure" },
+      "default": []
+    },
+
+    "tables": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/table" },
+      "default": []
+    },
+
+    "references": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/reference" },
+      "default": []
+    },
+
+    "symbol_map": {
+      "type": "object",
+      "description": "符号表。key 为符号的 LaTeX 表示，用于保证全文符号一致性。",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["meaning"],
+        "additionalProperties": false,
+        "properties": {
+          "meaning": { "type": "string" },
+          "unit": { "type": ["string", "null"], "description": "SI 单位，无量纲填 null" },
+          "first_defined_in": { "type": ["string", "null"], "description": "section id" },
+          "renamed_from": {
+            "type": ["string", "null"],
+            "description": "若 S2 重命名过该符号，记录原符号"
+          }
+        }
+      },
+      "default": {}
+    },
+
+    "gaps": {
+      "type": "array",
+      "description": "内容缺口清单。任何原文缺失、无法解析、需作者补充的项都必须登记于此，绝不允许用生成内容填补。",
+      "items": {
+        "type": "object",
+        "required": ["id", "severity", "category", "where", "what"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^gap-[0-9]+$" },
+          "severity": {
+            "enum": ["blocker", "high", "medium", "low"],
+            "description": "blocker=无法投稿；high=大概率被拒；medium=审稿人会问；low=可选优化"
+          },
+          "category": {
+            "enum": ["missing_data", "missing_experiment", "missing_reference",
+                     "missing_figure_source", "unparseable_content", "missing_metadata",
+                     "insufficient_novelty_evidence", "missing_ethics_statement", "other"]
+          },
+          "where": { "type": "string", "description": "section id 或文件位置" },
+          "what": { "type": "string", "description": "缺什么" },
+          "why_it_matters": { "type": ["string", "null"], "description": "为何影响投稿" },
+          "how_to_fix": { "type": ["string", "null"], "description": "给作者的具体补充指引" },
+          "detected_by": { "type": ["string", "null"], "description": "S1/S2/S3/S6 或具体检查器" }
+        }
+      },
+      "default": []
+    },
+
+    "rewrite_log": {
+      "type": "array",
+      "description": "S2 改写记录，供 S7 生成逐章修改记录。",
+      "items": {
+        "type": "object",
+        "required": ["source_ref", "target_ref", "change_type", "rationale"],
+        "additionalProperties": false,
+        "properties": {
+          "source_ref": { "type": "string", "description": "原 IR 中的 section/block id" },
+          "target_ref": { "type": "string", "description": "改写后的 section/block id" },
+          "change_type": {
+            "enum": ["restructure", "rewrite", "add", "delete", "merge", "split",
+                     "translate", "terminology_unify", "citation_add", "format_only"]
+          },
+          "rationale": { "type": "string", "description": "为什么这样改，须引用具体规范依据" },
+          "risk": {
+            "enum": ["none", "low", "medium", "high"],
+            "default": "none",
+            "description": "medium/high 需在报告中提请作者复核"
+          }
+        }
+      },
+      "default": []
+    }
+  },
+
+  "definitions": {
+    "section": {
+      "type": "object",
+      "required": ["id", "level", "heading", "semantic_role", "blocks"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^sec-[A-Za-z0-9_.-]+$" },
+        "parent_id": { "type": ["string", "null"] },
+        "level": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "heading": { "type": "string" },
+        "heading_original": { "type": ["string", "null"] },
+        "semantic_role": {
+          "enum": ["abstract", "introduction", "related_work", "problem_statement",
+                   "assumptions", "notation", "methodology", "model_formulation",
+                   "algorithm", "experiments", "results", "discussion",
+                   "sensitivity_analysis", "conclusion", "limitations",
+                   "future_work", "acknowledgements", "references", "appendix",
+                   "unclassified"],
+          "description": "语义角色。由 S1 提示词判定，是 S2 章节映射与 S5 模板填充的依据。"
+        },
+        "role_confidence": {
+          "type": ["number", "null"],
+          "minimum": 0, "maximum": 1,
+          "description": "语义角色判定置信度。<0.6 需在 parse-warnings 中提示人工确认。"
+        },
+        "blocks": { "type": "array", "items": { "$ref": "#/definitions/block" } },
+        "word_count": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+
+    "block": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "enum": ["paragraph", "equation", "figure", "table", "list",
+                   "code", "theorem", "definition", "proof", "algorithm", "quote", "raw"]
+        },
+        "id": { "type": ["string", "null"] },
+        "text": { "type": ["string", "null"], "description": "文本内容，可含内联 LaTeX" },
+        "latex": { "type": ["string", "null"], "description": "公式/环境的 LaTeX 源" },
+        "ref_id": {
+          "type": ["string", "null"],
+          "description": "指向 equations/figures/tables 数组中条目的 id"
+        },
+        "items": {
+          "type": ["array", "null"],
+          "items": { "type": "string" },
+          "description": "list 类型的条目"
+        },
+        "ordered": { "type": ["boolean", "null"] },
+        "language": { "type": ["string", "null"], "description": "code 块语言" },
+        "label": { "type": ["string", "null"], "description": "theorem/definition 的名称" },
+        "citations": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "该 block 内引用的 reference key 列表",
+          "default": []
+        },
+        "flags": {
+          "type": "array",
+          "items": { "enum": ["MISSING", "UNVERIFIED_REF", "NEEDS_AUTHOR_REVIEW",
+                               "AUTO_GENERATED", "TRANSLATED", "CJK_RESIDUE"] },
+          "description": "内容标记。MISSING/UNVERIFIED_REF 会被 G2/G6 拦截。",
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "equation": {
+      "type": "object",
+      "required": ["id", "latex"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^eq-[0-9]+$" },
+        "latex": { "type": "string", "minLength": 1 },
+        "numbered": { "type": "boolean", "default": true },
+        "label": { "type": ["string", "null"], "description": "LaTeX \\label 值" },
+        "environment": {
+          "enum": ["equation", "align", "gather", "multline", "split",
+                   "eqnarray", "inline", "cases"],
+          "default": "equation"
+        },
+        "referenced_in": {
+          "type": "array", "items": { "type": "string" },
+          "description": "引用该公式的 section id 列表。空数组 = 孤立公式，S6 报 warning。",
+          "default": []
+        },
+        "symbols_used": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "source_location": { "type": ["string", "null"] }
+      }
+    },
+
+    "figure": {
+      "type": "object",
+      "required": ["id", "caption"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^fig-[0-9]+$" },
+        "caption": { "type": "string" },
+        "caption_original": { "type": ["string", "null"] },
+        "label": { "type": ["string", "null"] },
+        "path": { "type": ["string", "null"], "description": "图片文件相对路径" },
+        "format": { "type": ["string", "null"], "enum": ["pdf", "eps", "png", "jpg", "svg", "tikz", null] },
+        "is_vector": { "type": ["boolean", "null"] },
+        "dpi": { "type": ["integer", "null"] },
+        "width_hint": { "type": ["string", "null"], "description": "如 \\linewidth、0.8\\textwidth" },
+        "referenced_in": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "placement": { "type": ["string", "null"], "description": "如 [htbp]" },
+        "subfigures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["label", "caption"],
+            "additionalProperties": false,
+            "properties": {
+              "label": { "type": "string" },
+              "caption": { "type": "string" },
+              "path": { "type": ["string", "null"] }
+            }
+          },
+          "default": []
+        }
+      }
+    },
+
+    "table": {
+      "type": "object",
+      "required": ["id", "caption"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^tab-[0-9]+$" },
+        "caption": { "type": "string" },
+        "caption_original": { "type": ["string", "null"] },
+        "label": { "type": ["string", "null"] },
+        "header": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "rows": {
+          "type": "array",
+          "items": { "type": "array", "items": { "type": "string" } },
+          "default": []
+        },
+        "latex": { "type": ["string", "null"], "description": "原始 tabular 源码（保真回退用）" },
+        "column_spec": { "type": ["string", "null"], "description": "如 lccr" },
+        "booktabs": { "type": "boolean", "default": true },
+        "referenced_in": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "notes": { "type": ["string", "null"], "description": "表注" }
+      }
+    },
+
+    "reference": {
+      "type": "object",
+      "required": ["key", "entry_type", "verification"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*[0-9]{4}[a-z0-9]*$",
+          "description": "统一格式 firstauthorYEARfirstword，全小写，如 zhang2023optimal"
+        },
+        "entry_type": {
+          "enum": ["article", "book", "inproceedings", "incollection", "phdthesis",
+                   "mastersthesis", "techreport", "misc", "online", "preprint"]
+        },
+        "title": { "type": "string" },
+        "authors": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "year": { "type": ["integer", "null"], "minimum": 1800, "maximum": 2100 },
+        "venue": { "type": ["string", "null"], "description": "期刊名或会议名" },
+        "volume": { "type": ["string", "null"] },
+        "number": { "type": ["string", "null"] },
+        "pages": { "type": ["string", "null"] },
+        "doi": { "type": ["string", "null"] },
+        "url": { "type": ["string", "null"] },
+        "publisher": { "type": ["string", "null"] },
+        "origin": {
+          "enum": ["from_source", "added_by_s2"],
+          "description": "from_source=原文自带；added_by_s2=改写阶段新增（必须验证）"
+        },
+        "verification": {
+          "type": "object",
+          "required": ["status"],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": ["verified_doi", "verified_source", "unverified", "not_required"],
+              "description": "origin=added_by_s2 时必须为 verified_*，否则 G2 拦截"
+            },
+            "method": {
+              "type": ["string", "null"],
+              "description": "如 crossref-api / publisher-page / google-scholar"
+            },
+            "checked_at": { "type": ["string", "null"], "format": "date-time" },
+            "evidence_url": { "type": ["string", "null"] }
+          }
+        },
+        "cited_in": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "raw": { "type": ["string", "null"], "description": "原文中的原始引用字符串" }
+      }
+    }
+  }
+}

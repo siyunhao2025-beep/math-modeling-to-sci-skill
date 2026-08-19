@@ -1,0 +1,9 @@
+{
+  "template_id": "elsevier-generic",
+  "publisher": "Elsevier",
+  "document_class": "elsarticle",
+  "intended_use": "S5 level-3 fallback when official/publisher templates unavailable",
+  "is_official": false,
+  "notes": "投稿前必须替换为目标期刊官方 elsarticle 模板与 Guide for Authors。",
+  "required_packages": ["elsarticle", "amsmath", "amssymb", "graphicx", "booktabs"]
+}

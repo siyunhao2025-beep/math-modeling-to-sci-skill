@@ -1,0 +1,37 @@
+name: Bug report
+description: 报告一个缺陷（解析/改写/校验/模板/匹配）
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+      description: 清晰描述缺陷现象。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 输入文件类型、命令、参数。如可能附上最小复现样例（注意勿泄密）。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      placeholder: 如 1.0.0
+  - type: checkboxes
+    id: honesty
+    attributes:
+      label: 诚信确认
+      options:
+        - label: 我未编造数据/引用/实验结果
+          required: true
