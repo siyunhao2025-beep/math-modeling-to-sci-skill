@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Citation Support Audit",
+  "type": "object",
+  "required": ["citations", "blockers", "warnings"],
+  "properties": {
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "location", "claim", "reference_key", "status", "confidence", "reason", "action"],
+        "properties": {
+          "id": {"type": "string"},
+          "location": {"type": "string"},
+          "claim": {"type": "string"},
+          "reference_key": {"type": "string"},
+          "doi": {"type": ["string", "null"]},
+          "status": {"enum": ["SUPPORTS", "PARTIALLY_SUPPORTS", "BACKGROUND_ONLY", "CONTRADICTS", "DOES_NOT_SUPPORT", "CANNOT_VERIFY"]},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "reason": {"type": "string"},
+          "action": {"enum": ["keep", "narrow_claim", "replace_citation", "add_citation", "author_check", "remove_claim"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "blockers": {"type": "array"},
+    "warnings": {"type": "array"}
+  },
+  "additionalProperties": true
+}

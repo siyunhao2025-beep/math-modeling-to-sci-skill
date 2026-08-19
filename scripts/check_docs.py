@@ -6,7 +6,6 @@ references commands or resources that do not exist in the repository.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import sys
 
@@ -37,13 +36,39 @@ def main() -> int:
         "examples/input/sample-model-report.tex",
         "docs/architecture.md",
         "references/troubleshooting.md",
+        "references/publication-readiness-api-sources.md",
+        "references/publication-readiness-suite.md",
         "prompts/00-extension-router.md",
         "prompts/08-sci-writing.md",
         "prompts/09-language-polish.md",
         "prompts/10-submission-journal-search.md",
+        "prompts/11-publication-readiness-orchestrator.md",
+        "prompts/12-reference-depth-audit.md",
+        "prompts/13-journal-fit-deep.md",
+        "prompts/14-claim-evidence-audit.md",
+        "prompts/15-figure-table-audit.md",
+        "prompts/16-reviewer-simulator.md",
+        "prompts/17-submission-preflight.md",
+        "prompts/18-methods-reporting-ethics.md",
         "prompts/shared/05-integrity-preservation.md",
+        "config/publication-readiness.yaml",
+        "config/schema/reviewer-simulation.schema.json",
+        "config/schema/citation-support-audit.schema.json",
+        "config/schema/submission-preflight.schema.json",
         "scripts/gates.py",
         "scripts/check_preservation.py",
+        "scripts/readiness/__init__.py",
+        "scripts/readiness/utils.py",
+        "scripts/readiness/reference_verifier.py",
+        "scripts/readiness/journal_fit.py",
+        "scripts/readiness/claim_evidence.py",
+        "scripts/readiness/figure_table_audit.py",
+        "scripts/readiness/compliance_audit.py",
+        "scripts/readiness/language_check.py",
+        "scripts/readiness/similarity_precheck.py",
+        "scripts/readiness/template_fetch.py",
+        "scripts/readiness/submission_preflight.py",
+        "scripts/readiness/run_readiness.py",
         ".github/workflows/ci.yml",
         ".github/workflows/validate-skill.yml",
     ]
@@ -51,13 +76,8 @@ def main() -> int:
         if not exists(rel):
             errors.append(f"missing required repository path: {rel}")
 
-    # Guard the most visible README/SKILL command drift without trying to parse
-    # every markdown code block as shell syntax.
     text_files = ["SKILL.md", "README.md", "CONTRIBUTING.md", "CHANGELOG.md"]
-    known_bad = [
-        # Entries may be added here when a deprecated path must remain forbidden.
-        "scripts/ingest/parse_word.py",
-    ]
+    known_bad = ["scripts/ingest/parse_word.py"]
     for rel in text_files:
         p = ROOT / rel
         if not p.exists():

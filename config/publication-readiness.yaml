@@ -1,0 +1,141 @@
+# Publication Readiness Suite (PRS)
+# Post-S6 extension for evidence, journal fit, review simulation and preflight.
+# This file does not replace config/quality-gates.yaml; it adds submission-facing checks.
+
+version: "1.0"
+
+readiness_levels:
+  blocked: BLOCKED
+  author_action: AUTHOR_ACTION_REQUIRED
+  human_check: READY_FOR_HUMAN_SUBMISSION_CHECK
+
+hard_blockers:
+  - unverified_or_conflicting_references
+  - citation_support_missing_or_contradictory
+  - unsupported_high_risk_claims
+  - missing_or_unmapped_figures_tables
+  - official_scope_not_verified
+  - article_type_not_verified
+  - unresolved_ethics_requirement
+  - missing_data_or_code_statement_when_required
+  - latex_not_compiled
+  - unresolved_s6_errors
+  - reviewer_simulation_major_blocker
+
+reference_verification:
+  providers: [crossref, semantic_scholar, pubmed]
+  minimum_primary_evidence: crossref
+  strong_consensus_min_sources: 2
+  strict_clean_bib: true
+  allow_author_confirmed_without_api: false
+  title_similarity_warning_below: 0.72
+
+citation_support:
+  required_for_human_submission_check: true
+  contradiction_is_blocker: true
+  does_not_support_is_blocker: true
+  cannot_verify_requires_author_action: true
+
+journal_fit:
+  recent_months: 12
+  recent_article_limit: 100
+  require_official_aims_scope_text: true
+  require_article_type_verification: true
+  scope_weight: 0.40
+  recent_article_weight: 0.35
+  article_type_weight: 0.15
+  format_compliance_weight: 0.10
+  desk_reject_risk_threshold: 0.55
+
+claim_evidence:
+  block_unsupported_causal_claims: true
+  block_unsupported_quantitative_claims: true
+  require_evidence_link_for_key_results: true
+  require_citation_for_established_knowledge: true
+
+figure_table_audit:
+  require_source_path: true
+  require_caption: true
+  require_in_text_reference: true
+  require_nonempty_tables: true
+  require_build_object_count_match: true
+
+reporting_guidelines:
+  auto_candidates:
+    systematic_review: PRISMA
+    meta_analysis: PRISMA
+    observational_study: STROBE
+    prediction_model: TRIPOD
+    animal_study: ARRIVE
+    randomized_trial: CONSORT
+    diagnostic_accuracy: STARD
+  verify_current_official_checklist_at_runtime: true
+
+methods_statistics:
+  require_sample_size_rationale_when_applicable: true
+  require_error_bar_definition: true
+  require_exact_p_value_or_reason: true
+  require_effect_size_or_uncertainty_when_applicable: true
+  require_multiple_testing_statement_when_applicable: true
+  require_missing_data_handling_when_applicable: true
+  require_randomization_blinding_when_applicable: true
+  require_reproducibility_statement: true
+
+ethics_compliance:
+  require_ethics_statement_for_human_or_animal_work: true
+  require_informed_consent_when_applicable: true
+  require_data_availability_statement: true
+  require_conflict_of_interest_statement: true
+  require_funding_statement: true
+  never_fabricate_approval_ids: true
+
+language:
+  languagetool_optional: true
+  public_languagetool_endpoint_not_assumed: true
+  preserve_claim_strength: true
+  preserve_numbers_units_citations_latex: true
+
+similarity_precheck:
+  advisory_only: true
+  never_label_as_ithenticate_or_turnitin: true
+  threshold_title_similarity: 0.92
+  threshold_abstract_similarity: 0.82
+
+reproducibility:
+  require_data_location_or_explicit_restriction: true
+  require_code_location_when_custom_code_is_material: true
+  require_supplement_manifest_when_supplements_exist: true
+
+latex:
+  compilation_required_for_human_submission_check: true
+  official_template_provenance_required: true
+
+reviewer_simulator:
+  min_substantive_comments: 3
+  max_substantive_comments: 5
+  max_revision_rounds: 3
+  personas:
+    - handling_editor
+    - domain_reviewer
+    - methods_statistics_reviewer
+    - skeptical_reviewer
+  prohibit_fabricated_experiments: true
+  prohibit_fake_acceptance_probability: true
+
+preflight:
+  required_artifacts:
+    - 06-validate/validation-final.json
+    - 08-readiness/reference-verification.json
+    - 08-readiness/citation-support-audit.json
+    - 08-readiness/journal-fit.json
+    - 08-readiness/claim-evidence-audit.json
+    - 08-readiness/figure-table-audit.json
+    - 08-readiness/compliance-audit.json
+    - 08-readiness/reviewer-simulation.json
+  conditional_artifacts:
+    latex:
+      - 08-readiness/latex-compile.json
+      - 08-readiness/template-provenance.json
+  optional_artifacts:
+    - 08-readiness/language-audit.json
+    - 08-readiness/similarity-precheck.json

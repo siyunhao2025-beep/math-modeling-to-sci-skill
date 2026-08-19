@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Submission Preflight Result",
+  "type": "object",
+  "required": ["schema_version", "checked_at", "status", "blockers", "warnings", "artifact_presence", "disclaimer"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "checked_at": {"type": "string"},
+    "workdir": {"type": "string"},
+    "status": {"enum": ["BLOCKED", "AUTHOR_ACTION_REQUIRED", "READY_FOR_HUMAN_SUBMISSION_CHECK"]},
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "area", "detail"],
+        "properties": {
+          "code": {"type": "string"},
+          "area": {"type": "string"},
+          "detail": {}
+        },
+        "additionalProperties": true
+      }
+    },
+    "warnings": {"type": "array"},
+    "artifact_presence": {"type": "object", "additionalProperties": {"type": "boolean"}},
+    "disclaimer": {"type": "string"}
+  },
+  "additionalProperties": true
+}
