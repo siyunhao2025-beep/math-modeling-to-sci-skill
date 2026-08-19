@@ -1,0 +1,47 @@
+name: Validate Skill
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install validation dependencies
+        run: pip install PyYAML jsonschema
+
+      - name: Validate internal paths
+        run: python scripts/check_docs.py
+
+      - name: Validate preservation contract
+        run: python scripts/check_preservation.py
+
+      - name: Validate SKILL frontmatter
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          text = Path('SKILL.md').read_text(encoding='utf-8')
+          if not text.startswith('---\n'):
+              raise SystemExit('SKILL.md frontmatter missing')
+          _, rest = text.split('---\n', 1)
+          front, _ = rest.split('\n---\n', 1)
+          meta = yaml.safe_load(front)
+          required = ['name', 'description', 'license', 'version']
+          missing = [k for k in required if not meta.get(k)]
+          if missing:
+              raise SystemExit(f'missing frontmatter keys: {missing}')
+          print('SKILL frontmatter: PASS')
+          PY

@@ -1,10 +1,12 @@
-"""run_pipeline.py — 编排入口。串联 S1→S7 的确定性步骤。
+"""run_pipeline.py — S1→S7 deterministic runtime with executable quality gates.
 
-说明：
-- S2（学术化改写）与 S3（质量评估）本质是 AI 推理任务，由 Skill 提示词驱动。
-- 本 CLI 在 `--ai-stub`（默认开）下用"直通 + 占位评估"让端到端流程可跑通 demo；
-  生产环境应关闭 --ai-stub，由编排器加载 02/03 提示词执行真实改写与评估。
-- `--probe-env` 用于 S0 探测环境能力矩阵（对应编排器启动前检查）。
+The CLI has two execution layers:
+- deterministic runtime: parsing, journal scoring, rendering, validation, reporting, gate enforcement;
+- agent-produced artifacts: S2 rewrite and S3 assessment.
+
+For demos, ``--ai-stub`` (default) creates conservative S2/S3 placeholders.
+``--no-ai-stub`` never pretends to call an LLM: it requires real S2/S3 artifacts
+to already exist in the workdir, typically written by the Agent Skill prompts.
 """
 from __future__ import annotations
 
@@ -20,9 +22,12 @@ sys.path.insert(0, HERE)
 
 import common
 from audit import AuditLogger
+from gates import GateEvaluator
 import ingest, journals, render, validate, report
 
 STAGES = ["S1", "S2", "S3", "S4", "S5", "S6", "S7"]
+GATE_BY_STAGE = {f"S{i}": f"G{i}" for i in range(1, 7)}
+PIPELINE_YAML = common.repo_path("config", "pipeline.yaml")
 
 
 def probe_env() -> dict:
@@ -38,9 +43,17 @@ def probe_env() -> dict:
 
     net = False
     try:
-        subprocess.run([sys.executable, "-c", "import urllib.request,socket;socket.setdefaulttimeout(3);"
-                        "urllib.request.urlopen('https://api.crossref.org')"],
-                       capture_output=True, timeout=6)
+        subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import urllib.request,socket;"
+                "socket.setdefaulttimeout(3);"
+                "urllib.request.urlopen('https://api.crossref.org')",
+            ],
+            capture_output=True,
+            timeout=6,
+        )
         net = True
     except Exception:
         net = False
@@ -55,15 +68,29 @@ def probe_env() -> dict:
     }
 
 
+def snapshot_input(input_path: str, workdir: str) -> str:
+    target_dir = os.path.join(workdir, "00-input")
+    os.makedirs(target_dir, exist_ok=True)
+    target = os.path.join(target_dir, os.path.basename(input_path))
+    if os.path.abspath(input_path) != os.path.abspath(target):
+        shutil.copy2(input_path, target)
+    return target
+
+
 def ai_stub_s2(ir_path: str, workdir: str) -> str:
-    """CLI 占位：把 S1 的 IR 直通为 rewritten IR（不执行真实学术改写）。"""
+    """Demo-only pass-through. It does not perform academic rewriting."""
     ir = common.load_json(ir_path)
     ir["provenance"]["stage"] = "S2"
-    ir["provenance"]["parser"] = "ai-stub@1.0.0"
+    ir["provenance"]["upstream_sha256"] = common.sha256_of(ir_path)
+    ir["provenance"]["parser"] = "cli-demo-stub@1.1.0"
     ir["rewrite_log"] = [{
-        "source_ref": "ALL", "target_ref": "ALL",
+        "source_ref": "ALL",
+        "target_ref": "ALL",
         "change_type": "format_only",
-        "rationale": "CLI demo 占位：真实改写由 Skill 提示词 02-academic-rewrite.md 执行",
+        "rationale": (
+            "CLI demo stub only: scientific content was passed through unchanged. "
+            "A real rewrite must be produced by prompts/02-academic-rewrite.md."
+        ),
         "risk": "high",
     }]
     out = os.path.join(workdir, "02-rewrite", "manuscript.rewritten.json")
@@ -71,27 +98,78 @@ def ai_stub_s2(ir_path: str, workdir: str) -> str:
     return out
 
 
-def ai_stub_s3(workdir: str, total_score: float) -> str:
+def _stub_tier(score: float) -> str:
+    if score >= 8.0:
+        return "Q1-ready"
+    if score >= 7.0:
+        return "Q2-ready"
+    if score >= 6.5:
+        return "Q3-Q4-ready"
+    if score >= 5.0:
+        return "major-revision-needed"
+    return "not-ready"
+
+
+def ai_stub_s3(
+    rewritten_path: str,
+    workdir: str,
+    total_score: float,
+    scope: list[str],
+    method: list[str],
+) -> str:
+    """Create a schema-valid demo assessment without pretending it is expert review."""
+    ms = common.load_json(rewritten_path)
+    evidence = next((s.get("id") for s in ms.get("sections", []) if s.get("id")), "sec-1")
+    dim_names = [
+        "novelty",
+        "methodological_rigor",
+        "experimental_completeness",
+        "academic_writing",
+        "structural_compliance",
+        "reproducibility",
+    ]
+    dims = {
+        name: {
+            "score": total_score,
+            "justification": (
+                "CLI demo placeholder score only; no independent scholarly assessment "
+                "has been performed for this dimension."
+            ),
+            "evidence_refs": [evidence],
+        }
+        for name in dim_names
+    }
     assessment = {
         "schema_version": "1.0",
         "assessed_at": common.utcnow_iso(),
+        "target_ir_sha256": common.sha256_of(rewritten_path) or "",
+        "assessor_note": (
+            "CLI demo stub. Replace this artifact with a real independent S3 assessment "
+            "before treating the manuscript as submission-ready."
+        ),
+        "dimensions": dims,
         "total_score": total_score,
-        "tier": "Q2" if total_score >= 7.5 else ("Q3" if total_score >= 6.5 else "Q4"),
-        "dimensions": {
-            "novelty": total_score, "methodological_rigor": total_score,
-            "experimental_completeness": total_score, "academic_writing": total_score,
-            "structural_compliance": total_score, "reproducibility": total_score,
-        },
-        "weakest_dimension": "experimental_completeness",
+        "score_breakdown": "CLI demo: all six dimensions assigned the same placeholder score.",
+        "tier": _stub_tier(total_score),
+        "confidence": 0.5,
         "improvement_actions": [],
-        "self_check": {
-            "independent_of_rewrite_log": True,
-            "all_dimensions_scored": True,
-            "is_cli_stub": True,
-            "note": "CLI 占位评估，真实评估由 Skill 提示词 03-quality-assessment.md 执行",
+        "field_classification": {
+            "primary_field": None,
+            "secondary_fields": [],
+            "scope_tags": scope,
+            "method_tags": method,
+            "application_domain": None,
+            "msc_suggestions": [],
         },
-        "input_summary": {
-            "scope_tags": [], "method_tags": [],
+        "caveats": [
+            "This is a deterministic CLI demo assessment, not an AI or human peer review."
+        ],
+        "self_check": {
+            "all_dimensions_have_evidence": True,
+            "score_arithmetic_verified": True,
+            "no_fabricated_claims": True,
+            "actions_are_specific": True,
+            "notes": "Schema-valid placeholder generated by --ai-stub.",
         },
     }
     out = os.path.join(workdir, "03-assess", "assessment.json")
@@ -99,79 +177,306 @@ def ai_stub_s3(workdir: str, total_score: float) -> str:
     return out
 
 
-def main():
+def print_audit(workdir: str) -> int:
+    logger = AuditLogger(workdir)
+    events = logger.read_all()
+    if not events:
+        print(f"No audit events found in {os.path.join(workdir, 'audit.jsonl')}")
+        return 1
+    print(json.dumps(events, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _existing(path: str, label: str) -> str:
+    if not os.path.isfile(path):
+        raise RuntimeError(f"{label} missing: {path}")
+    return path
+
+
+def _stage_config(pipeline_cfg: dict, stage: str) -> dict:
+    for item in pipeline_cfg.get("stages", []):
+        if item.get("id") == stage:
+            return item
+    return {}
+
+
+def _gate_failure_action(result: dict, mode: str) -> tuple[str, str]:
+    cfg = result.get("on_fail") or {}
+    action = cfg.get("action", "block")
+    if action == "ask_human":
+        if mode == "interactive":
+            return "ask_human", "configured human checkpoint"
+        return cfg.get("fallback_action", "block"), "auto-mode fallback from ask_human"
+    return action, "configured on_fail action"
+
+
+def _interactive_confirm(message: str) -> bool:
+    if not sys.stdin.isatty():
+        raise RuntimeError("interactive mode requires a TTY")
+    answer = input(f"{message} [Y/n] ").strip().lower()
+    return answer in ("", "y", "yes")
+
+
+def _report_gate(result: dict) -> None:
+    status = "PASS" if result.get("passed") else "FAIL"
+    print(f"[{result['gate']}] {status} — {result.get('name')}")
+    for item in result.get("error_failures", []):
+        print(f"  ERROR {item['id']} {item['check']}: {item['detail']}")
+    for item in result.get("warnings", []):
+        print(f"  WARN  {item['id']} {item['check']}: {item['detail']}")
+
+
+def main() -> int:
     ap = argparse.ArgumentParser(description="math-modeling-to-sci-skill pipeline")
-    ap.add_argument("--input", help="输入文件路径 (.docx/.tex/.md)")
+    ap.add_argument("--input", help="input manuscript (.docx/.tex/.md); required when S1 runs")
     ap.add_argument("--workdir", default="runs/demo")
     ap.add_argument("--mode", choices=["auto", "interactive", "dry-run"], default="auto")
-    ap.add_argument("--stage", default="S1", choices=STAGES)
-    ap.add_argument("--target-journal", default=None)
-    ap.add_argument("--scope-tags", default="", help="逗号分隔，示例 applied-mathematics,optimization")
-    ap.add_argument("--method-tags", default="", help="逗号分隔")
-    ap.add_argument("--score", type=float, default=6.5, help="S3 占位总分（生产环境由 AI 评估）")
-    ap.add_argument("--ai-stub", action="store_true", default=True)
-    ap.add_argument("--no-ai-stub", dest="ai_stub", action="store_false")
-    ap.add_argument("--probe-env", action="store_true", help="仅探测环境并退出")
+    ap.add_argument("--stage", default="S1", choices=STAGES, help="first stage to run")
+    ap.add_argument("--stop-after", choices=STAGES, default=None, help="last stage to run")
+    ap.add_argument("--target-journal", "--journal", dest="target_journal", default=None)
+    ap.add_argument("--scope-tags", default="", help="comma-separated scope tags")
+    ap.add_argument("--method-tags", default="", help="comma-separated method tags")
+    ap.add_argument("--score", type=float, default=6.5, help="S3 demo score used only by --ai-stub")
+    ai = ap.add_mutually_exclusive_group()
+    ai.add_argument("--ai-stub", dest="ai_stub", action="store_true",
+                    help="generate demo-only S2/S3 placeholders (default)")
+    ai.add_argument("--no-ai-stub", dest="ai_stub", action="store_false",
+                    help="consume real S2/S3 artifacts already present in workdir")
+    ap.set_defaults(ai_stub=True)
+    ap.add_argument("--probe-env", action="store_true", help="probe environment and exit")
+    ap.add_argument("--show-audit", action="store_true", help="print workdir/audit.jsonl and exit")
     args = ap.parse_args()
 
     if args.probe_env:
         print(json.dumps(probe_env(), indent=2, ensure_ascii=False))
-        return
+        return 0
+    if args.show_audit:
+        return print_audit(args.workdir)
 
-    if not args.input:
-        ap.error("--input 必填（除非 --probe-env）")
-    if not os.path.isfile(args.input):
-        ap.error(f"输入文件不存在: {args.input}")
+    pipeline_cfg = common.load_yaml(PIPELINE_YAML)
+    mode_cfg = ((pipeline_cfg.get("pipeline") or {}).get("modes") or {}).get(args.mode, {})
+
+    start = STAGES.index(args.stage)
+    stop_stage = args.stop_after
+    if args.mode == "dry-run":
+        configured = mode_cfg.get("stages") or ["S1", "S2", "S3", "S4"]
+        dry_last = max(STAGES.index(x) for x in configured)
+        if stop_stage is None or STAGES.index(stop_stage) > dry_last:
+            stop_stage = STAGES[dry_last]
+    if stop_stage is None:
+        stop_stage = "S7"
+    stop = STAGES.index(stop_stage)
+    if stop < start:
+        ap.error("--stop-after cannot be earlier than --stage")
+
+    if start == 0:
+        if not args.input:
+            ap.error("--input is required when S1 runs")
+        if not os.path.isfile(args.input):
+            ap.error(f"input file does not exist: {args.input}")
 
     os.makedirs(args.workdir, exist_ok=True)
     logger = AuditLogger(args.workdir)
-    logger.set_env(probe_env())
+    logger.set_env({
+        **probe_env(),
+        "mode": args.mode,
+        "ai_stub": args.ai_stub,
+        "pipeline_config_version": (pipeline_cfg.get("pipeline") or {}).get("version"),
+    })
+    if args.ai_stub:
+        logger.log(
+            "degrade",
+            "S0",
+            result="demo_only",
+            detail=(
+                "AI stub mode is active. S2/S3 are placeholders; final output must not be "
+                "treated as a real submission-ready manuscript."
+            ),
+        )
 
-    start = STAGES.index(args.stage)
-    # 若从 S4+ 开始但缺少上游产物，ingest/rewrite 仍按需补（仅 demo 便利）
-    scope = [s for s in args.scope_tags.split(",") if s]
-    method = [m for m in args.method_tags.split(",") if m]
+    source_path = args.input
+    if start == 0:
+        source_path = snapshot_input(args.input, args.workdir)
+
+    scope = [x.strip() for x in args.scope_tags.split(",") if x.strip()]
+    method = [x.strip() for x in args.method_tags.split(",") if x.strip()]
 
     ir_path = os.path.join(args.workdir, "01-parse", "manuscript.ir.json")
     rewritten_path = os.path.join(args.workdir, "02-rewrite", "manuscript.rewritten.json")
     assessment_path = os.path.join(args.workdir, "03-assess", "assessment.json")
     jm_path = os.path.join(args.workdir, "04-journals", "journal-match.json")
 
-    for i in range(start, len(STAGES)):
-        stage = STAGES[i]
-        if stage == "S1":
-            ir_path = ingest.run(args.input, args.workdir)
-        elif stage == "S2":
-            if args.ai_stub:
-                rewritten_path = ai_stub_s2(ir_path, args.workdir)
-            else:
-                print("[S2] 需由 Skill 提示词 02-academic-rewrite.md 执行；本 CLI 未提供 --ai-stub 时跳过。")
-                continue
-        elif stage == "S3":
-            if args.ai_stub:
-                assessment_path = ai_stub_s3(args.workdir, args.score)
-            else:
-                print("[S3] 需由 Skill 提示词 03-quality-assessment.md 执行。")
-                continue
-        elif stage == "S4":
-            jm_path = journals.run(assessment_path, args.workdir,
-                                   paper_scope=scope, paper_method=method,
-                                   total_score=args.score, target_journal=args.target_journal)
-        elif stage == "S5":
-            render.run(rewritten_path, args.workdir, jm_path)
-        elif stage == "S6":
-            bib = os.path.join(args.workdir, "05-template", "build", "references.bib")
-            jm = common.load_json(jm_path) if os.path.isfile(jm_path) else {}
-            cons = ((jm.get("recommendations") or [{}])[0]).get("constraints", {})
-            validate.run(rewritten_path, args.workdir, bib_path=bib if os.path.isfile(bib) else None,
-                         constraints=cons, target_journal=args.target_journal)
-        elif stage == "S7":
-            report.run(args.workdir)
+    blocked = False
+    block_detail = None
 
-    logger.log("run_end", "S0", result="success", detail="pipeline finished (CLI)")
-    print(f"\n✅ 流水线完成。工作目录：{args.workdir}")
-    print(f"   报告：{os.path.join(args.workdir, 'conversion-report.md')}")
+    for idx in range(start, stop + 1):
+        stage = STAGES[idx]
+        cfg = _stage_config(pipeline_cfg, stage)
+        attempts = 0
+        max_attempts = int(((cfg.get("retry") or {}).get("max_attempts") or 1))
+
+        while True:
+            attempts += 1
+            print(f"\n[{stage}] {cfg.get('name', stage)} — attempt {attempts}")
+
+            if stage == "S1":
+                ir_path = ingest.run(args.input, args.workdir)
+
+            elif stage == "S2":
+                _existing(ir_path, "S1 IR")
+                if args.ai_stub:
+                    rewritten_path = ai_stub_s2(ir_path, args.workdir)
+                else:
+                    _existing(
+                        rewritten_path,
+                        "real S2 artifact (run prompts/02-academic-rewrite.md first)",
+                    )
+                    print(f"[S2] using existing real artifact: {rewritten_path}")
+
+            elif stage == "S3":
+                _existing(rewritten_path, "S2 rewritten IR")
+                if args.ai_stub:
+                    assessment_path = ai_stub_s3(
+                        rewritten_path, args.workdir, args.score, scope, method
+                    )
+                else:
+                    _existing(
+                        assessment_path,
+                        "real S3 artifact (run prompts/03-quality-assessment.md first)",
+                    )
+                    print(f"[S3] using existing real artifact: {assessment_path}")
+
+            elif stage == "S4":
+                _existing(assessment_path, "S3 assessment")
+                jm_path = journals.run(
+                    assessment_path,
+                    args.workdir,
+                    paper_scope=scope,
+                    paper_method=method,
+                    total_score=args.score if args.ai_stub else None,
+                    target_journal=args.target_journal,
+                )
+
+            elif stage == "S5":
+                _existing(rewritten_path, "S2 rewritten IR")
+                _existing(jm_path, "S4 journal match")
+                render.run(rewritten_path, args.workdir, jm_path)
+
+            elif stage == "S6":
+                _existing(rewritten_path, "S2 rewritten IR")
+                _existing(jm_path, "S4 journal match")
+                main_tex = os.path.join(args.workdir, "05-template", "build", "main.tex")
+                _existing(main_tex, "S5 build/main.tex")
+                bib = os.path.join(args.workdir, "05-template", "build", "references.bib")
+                jm = common.load_json(jm_path)
+                cons = ((jm.get("recommendations") or [{}])[0]).get("constraints", {})
+                validate.run(
+                    rewritten_path,
+                    args.workdir,
+                    bib_path=bib if os.path.isfile(bib) else None,
+                    constraints=cons,
+                    round_no=attempts,
+                    target_journal=args.target_journal,
+                )
+
+            elif stage == "S7":
+                report.run(args.workdir)
+
+            gate_id = GATE_BY_STAGE.get(stage)
+            if not gate_id:
+                break
+
+            gate = GateEvaluator(args.workdir, source_path=source_path).evaluate(gate_id)
+            _report_gate(gate)
+            logger.log(
+                "gate_decision",
+                stage,
+                gate=gate_id,
+                result="pass" if gate["passed"] else "fail",
+                action="proceed" if gate["passed"] else None,
+                gate_metrics={
+                    "error_failures": len(gate.get("error_failures", [])),
+                    "warnings": len(gate.get("warnings", [])),
+                    "attempt": attempts,
+                },
+            )
+
+            if gate["passed"]:
+                if args.mode == "interactive" and not _interactive_confirm(
+                    f"{gate_id} passed. Continue after {stage}?"
+                ):
+                    blocked = True
+                    block_detail = f"user stopped after {gate_id}"
+                break
+
+            action, reason = _gate_failure_action(gate, args.mode)
+            if action == "ask_human":
+                if _interactive_confirm(f"{gate_id} failed. Continue in degraded mode?"):
+                    action = "degrade"
+                else:
+                    action = "block"
+
+            if action == "retry" and attempts < max_attempts:
+                logger.log(
+                    "gate_decision",
+                    stage,
+                    gate=gate_id,
+                    result="fail",
+                    action="retry",
+                    detail=reason,
+                )
+                continue
+
+            if action == "retry":
+                after = ((gate.get("on_fail") or {}).get("after_exhausted") or {})
+                action = after.get("action", "block")
+
+            if action == "degrade":
+                logger.log(
+                    "degrade",
+                    stage,
+                    gate=gate_id,
+                    result="degraded",
+                    detail=reason,
+                )
+                print(f"[{gate_id}] continuing with explicit DEGRADE disclosure")
+                break
+
+            if action == "rollback":
+                block_detail = (
+                    f"{gate_id} requested rollback to "
+                    f"{(gate.get('on_fail') or {}).get('rollback_to', 'an upstream stage')}; "
+                    "the CLI cannot perform semantic rewriting. Run the Agent prompt, then resume."
+                )
+            else:
+                block_detail = f"{gate_id} blocked the pipeline ({reason})"
+            blocked = True
+            logger.log("run_end", stage, result="blocked", detail=block_detail, gate=gate_id)
+            break
+
+        if blocked:
+            break
+
+    if blocked:
+        if args.mode != "dry-run":
+            try:
+                report_path = report.run(args.workdir)
+                print(f"\n⛔ Pipeline blocked. Diagnostic report: {report_path}")
+            except Exception as exc:
+                print(f"\n⛔ Pipeline blocked; partial report could not be generated: {exc}")
+        else:
+            print(f"\n⛔ Dry-run blocked: {block_detail}")
+        return 2
+
+    logger.log("run_end", "S0", result="success", detail="requested stage range finished")
+    print(f"\n✅ Requested pipeline range finished: {args.stage} → {stop_stage}")
+    print(f"   workdir: {args.workdir}")
+    if stop >= STAGES.index("S7"):
+        print(f"   report: {os.path.join(args.workdir, 'conversion-report.md')}")
+    if args.ai_stub:
+        print("   NOTE: --ai-stub was used; this run is DEMO ONLY, not a real submission-ready assessment.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
