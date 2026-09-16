@@ -5,7 +5,6 @@ import argparse
 import datetime as dt
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import sys
@@ -94,7 +93,8 @@ def get_json(url, retries=2):
                 return json.loads(raw)
         except urllib.error.HTTPError as exc:
             if attempt == retries or exc.code not in (429, 500, 502, 503, 504):
-                raise
+                detail = exc.read(4096).decode("utf-8", errors="replace")
+                raise RuntimeError(f"Crossref HTTP {exc.code}: {detail}") from exc
             wait = exc.headers.get("Retry-After", "")
             if wait.isdigit() and int(wait) > 60:
                 raise RuntimeError("Rate limited: Retry-After exceeds bounded retry budget") from exc
@@ -112,6 +112,8 @@ def search(query, since, until, output, pages=2, rows=50, mode="published", fetc
         raise ValueError("since must not follow until")
     if not 1 <= pages <= 100 or not 1 <= rows <= 1000:
         raise ValueError("pages: 1..100; rows: 1..1000")
+    if mode not in {"published", "indexed"}:
+        raise ValueError("Unknown search mode")
     out = Path(output)
     if out.exists():
         raise FileExistsError("Use a new search directory to preserve previous snapshots")
@@ -127,6 +129,7 @@ def search(query, since, until, output, pages=2, rows=50, mode="published", fetc
             params = {"query.bibliographic": query, "filter": f"from-{prefix}-date:{since},until-{prefix}-date:{until}",
                       "rows": rows, "cursor": cursor, "sort": "published" if mode == "published" else "indexed", "order": "desc"}
             url = "https://api.crossref.org/v1/works?" + urllib.parse.urlencode(params)
+            report["last_requested_url"] = url
             data = fetch(url)
             name = f"raw-{page + 1:03d}.json"
             write(out / name, data)
@@ -148,7 +151,7 @@ def search(query, since, until, output, pages=2, rows=50, mode="published", fetc
         report.update(status="ok", records=list(records.values()), provider_query_exhausted=complete,
                       truncated=not complete)
     except Exception as exc:
-        report.update(status="error", error_type=type(exc).__name__, records=list(records.values()),
+        report.update(status="error", error_type=type(exc).__name__, error=str(exc), records=list(records.values()),
                       provider_query_exhausted=False, truncated=True)
         write(out / "search.json", report)
         raise
@@ -329,7 +332,7 @@ def package(output):
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as z:
         for p, rel in files:
             info = zipfile.ZipInfo("research-mother/" + rel.as_posix(), (2026, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZipFile if False else zipfile.ZIP_DEFLATED
+            info.compress_type = zipfile.ZIP_DEFLATED
             z.writestr(info, p.read_bytes())
     return {"file": str(output), "sha256": sha(output), "files": len(files), "bytes": output.stat().st_size}
 

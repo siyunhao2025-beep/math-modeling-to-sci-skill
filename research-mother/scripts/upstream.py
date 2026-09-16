@@ -18,10 +18,10 @@ def check_members(z):
         path = PurePosixPath(item.filename)
         mode = item.external_attr >> 16
         if path.is_absolute() or ".." in path.parts or "\\" in item.filename or ":" in item.filename or stat.S_ISLNK(mode):
-            raise ValueError("Unsafe archive member")
+            raise ValueError("Unsafe archive member: " + item.filename)
         total += item.file_size
         if total > 500_000_000 or item.file_size > 100_000_000:
-            raise ValueError("Expanded archive exceeds bounds")
+            raise ValueError("Expanded archive exceeds bounds: " + item.filename)
     return total
 
 
@@ -67,9 +67,11 @@ def main():
         try:
             rows.append(stage(entry, Path(a.out) / entry["id"] / entry["commit"]))
         except Exception as exc:
-            rows.append({"id": entry["id"], "status": "failed", "error_type": type(exc).__name__})
+            rows.append({"id": entry["id"], "status": "failed", "error_type": type(exc).__name__, "error": str(exc)})
     write(Path(a.out) / "stage-report.json", rows)
     print("Source staging only; GPT account installation is a separate host action.")
+    for row in rows:
+        print(row["id"], row["status"], row.get("error", ""))
     return 2 if any(r["status"] == "failed" for r in rows) else 0
 
 
