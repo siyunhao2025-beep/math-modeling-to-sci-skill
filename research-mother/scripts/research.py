@@ -122,12 +122,12 @@ def search(query, since, until, output, pages=2, rows=50, mode="published", fetc
     cursor, records, snapshots, complete = "*", {}, [], False
     report = {"version": VERSION, "retrieved_at": utc(), "provider": "Crossref",
               "query": query, "since": since, "until": until, "mode": mode,
-              "status": "running", "coverage": "bounded_single_provider_candidates",
+              "status": "running", "server_sort": "indexed", "coverage": "bounded_single_provider_candidates",
               "records": [], "requests": snapshots}
     try:
         for page in range(pages):
             params = {"query.bibliographic": query, "filter": f"from-{prefix}-date:{since},until-{prefix}-date:{until}",
-                      "rows": rows, "cursor": cursor, "sort": "published" if mode == "published" else "indexed", "order": "desc"}
+                      "rows": rows, "cursor": cursor, "sort": "indexed", "order": "desc"}
             url = "https://api.crossref.org/v1/works?" + urllib.parse.urlencode(params)
             report["last_requested_url"] = url
             data = fetch(url)

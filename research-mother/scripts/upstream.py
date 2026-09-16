@@ -20,7 +20,7 @@ def check_members(z):
         if path.is_absolute() or ".." in path.parts or "\\" in item.filename or ":" in item.filename or stat.S_ISLNK(mode):
             raise ValueError("Unsafe archive member: " + item.filename)
         total += item.file_size
-        if total > 500_000_000 or item.file_size > 100_000_000:
+        if total > 1_000_000_000 or item.file_size > 100_000_000:
             raise ValueError("Expanded archive exceeds bounds: " + item.filename)
     return total
 
@@ -36,9 +36,9 @@ def stage(entry, target):
     url = f'https://codeload.github.com/{entry["repository"]}/zip/{entry["commit"]}'
     req = urllib.request.Request(url, headers={"User-Agent": "ResearchMother/0.1"})
     with urllib.request.urlopen(req, timeout=60) as response:
-        data = response.read(100_000_001)
-    if len(data) > 100_000_000:
-        raise ValueError("Archive exceeds 100 MB")
+        data = response.read(300_000_001)
+    if len(data) > 300_000_000:
+        raise ValueError("Archive exceeds 300 MB")
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         check_members(z)
         target.mkdir(parents=True)
