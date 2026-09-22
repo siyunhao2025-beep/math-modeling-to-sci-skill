@@ -39,9 +39,12 @@ jobs:
           _, rest = text.split('---\n', 1)
           front, _ = rest.split('\n---\n', 1)
           meta = yaml.safe_load(front)
-          required = ['name', 'description', 'license', 'version']
+          required = ['name', 'description']
           missing = [k for k in required if not meta.get(k)]
           if missing:
               raise SystemExit(f'missing frontmatter keys: {missing}')
+          extra = sorted(set(meta) - set(required))
+          if extra:
+              raise SystemExit(f'unsupported frontmatter keys: {extra}')
           print('SKILL frontmatter: PASS')
           PY

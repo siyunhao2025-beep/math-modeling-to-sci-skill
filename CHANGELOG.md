@@ -1,11 +1,37 @@
 # Changelog
 
-本文件记录项目的显著变更。版本号遵循 Semantic Versioning；根目录 `VERSION` 表示项目发行版本，`SKILL.md` 头部的 legacy `version: 1.0.0` 因兼容性保护暂不改动。
+本文件记录项目的显著变更。版本号遵循 Semantic Versioning；根目录 `VERSION` 表示项目发行版本。
 
 ## [Unreleased]
 
 ### Added
 - 后续改动在此记录。
+
+## [2.0.0] - 2026-09-22
+
+本版本将原有“七阶段转换 + 后置扩展”重构为统一的 **FORGE × TRACE** 体系，并融合 Ku-academic 与 Huaweibei-cool 中经过筛选的证据工程、变更传播和模型验证能力。
+
+### Added
+
+- FORGE 五阶段：Fidelity、Opportunity、Revalidation、Grounding、Editorial。
+- TRACE 五条横向质量轨：可追溯、严谨、论证、合规、证据。
+- `scripts/forge.py`：非破坏性的工作区初始化、阶段门、状态汇总与变更影响传播。
+- 八类模型原型验证矩阵、图表契约、引用身份/支持双检与访问深度规则。
+- `config/forge-trace.yaml`、FORGE 项目 schema、独立回归测试与 UI 元数据。
+- 全新品牌定位、广告语与主视觉。
+
+### Changed
+
+- 将“数学内容零损失”改为“零静默损失”：原始资产全部可追溯，但无关内容可经记录和作者确认后移出正文。
+- 图表数量由 claim coverage 决定，不采用固定图数或强制技术路线图。
+- `SKILL.md` 改为当前规范允许的两字段 frontmatter，并把详细规则按需拆入 references。
+- S1–S8 降为兼容运行时，由 FORGE 统一研究逻辑与阶段门语义。
+
+### Fixed
+
+- Windows 控制台 Unicode 退出信息导致的运行时崩溃。
+- Windows 路径分隔符导致的 readiness bridge 测试失败。
+- 旧版 skill 前缀保护阻止架构升级的问题。
 
 ## [1.2.0] - 2026-08-19
 

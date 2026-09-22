@@ -1,223 +1,131 @@
-# Architecture
+# Architecture · FORGE × TRACE
 
-This document describes the **implemented** runtime architecture. It deliberately separates deterministic Python behavior from Agent/LLM behavior so that documentation does not imply capabilities the CLI does not have.
+## 1. 三层架构
 
-## 1. Three execution layers
+### A. 研究逻辑层：FORGE × TRACE
 
-### A. Deterministic S1–S7 Python runtime
-
-`scripts/run_pipeline.py` executes the mechanical parts of the legacy S1–S7 workflow:
-
-- S1: parse source files into manuscript IR;
-- S4: score the local journal seed pool;
-- S5: render a fallback LaTeX build;
-- S6: run deterministic validation checks;
-- S7: assemble a conservative conversion report;
-- after S1–S6: call `scripts/gates.py` to evaluate the configured gate.
-
-The runtime loads `config/pipeline.yaml` for mode/stage behavior and `config/quality-gates.yaml` for gate conditions and failure policy.
-
-### B. Agent/LLM reasoning layer
-
-S2 (academic rewriting) and S3 (independent quality assessment) are reasoning tasks. The Python CLI does **not** contain a hidden LLM client.
-
-- `--ai-stub` is a demo path only. It passes the IR through at S2 and creates a schema-valid placeholder S3 assessment. The report is marked `DEMO_ONLY_NOT_SUBMISSION_READY`.
-- `--no-ai-stub` consumes real `02-rewrite/manuscript.rewritten.json` and `03-assess/assessment.json` artifacts already produced by the Agent Skill. If either artifact is missing, the CLI stops with an explicit error.
-
-W/P/J and the semantic portions of S8 are also Agent tasks.
-
-### C. Post-S6 Publication Readiness Suite (S8 logical layer)
-
-S8 is a **logical post-S6 layer**, not a renumbering of `config/pipeline.yaml`. It combines deterministic readiness utilities under `scripts/readiness/` with explicit Agent semantic review.
-
-Deterministic parts include:
-
-- DOI/reference identity verification via Crossref + Semantic Scholar/PubMed corroboration;
-- recent-journal-content retrieval and reproducible lexical fit baseline;
-- claim/evidence structural ledger;
-- figure/table source/mapping checks;
-- reporting/methods/ethics pre-screen;
-- optional LanguageTool diagnostics;
-- advisory similar-paper discovery;
-- official-template provenance download/manifest;
-- aggregated submission preflight.
-
-Agent-only semantic parts include:
-
-- whether a cited paper actually supports the specific manuscript claim;
-- whether a claim is scientifically supported rather than merely linked to an object;
-- visual/scientific interpretation of figures and tables;
-- current official journal scope/article-type interpretation;
-- field-specific reporting-checklist completion;
-- Reviewer Simulator and revision/rebuttal loop.
-
-## 2. Canonical flow
-
-Legacy runtime:
+`SKILL.md` 负责意图路由，`references/forge-trace-framework.md` 定义 F–E 阶段，TRACE 负责横向质量判断。
 
 ```text
-source
+F Fidelity → O Opportunity → R Revalidation → G Grounding → E Editorial
+      ×       Traceability / Rigor / Argument / Compliance / Evidence
+```
+
+这一层回答“研究是否成立”，需要代理与作者做语义判断。脚本不得替代。
+
+### B. 确定性工件层：FORGE CLI
+
+`scripts/forge.py` 提供四个命令：
+
+- `init`：建立输入快照、哈希、目录和空白工件；
+- `status`：汇总各阶段的确定性契约状态；
+- `gate`：检查单阶段文件、字段、哈希和声明的阻塞项；
+- `impact`：将上游工件变更传播到下游阶段，但不删除任何产物。
+
+脚本只证明“文件与契约满足”，不证明模型、主张、引用或期刊匹配在科学上正确。
+
+### C. 兼容运行时：S1–S8
+
+原有脚本继续承担成熟的机械工作：
+
+- S1：Word/LaTeX/工程解析与 IR；
+- S2/S3：由 Agent 生成学术改写与质量评估工件；
+- S4/S5：候选期刊与模板适配；
+- S6：引用、公式、图表、CJK 和编译检查；
+- S8：引用真实性、claim、图表、合规、期刊 fit、模拟审稿和 preflight；
+- S7：基于真实工件生成最终报告。
+
+映射规则见 `references/legacy-stage-map.md`。旧分数与编译门不得覆盖 FORGE 的证据阻塞。
+
+## 2. 规范数据流
+
+```text
+原始文件
+  ↓ snapshot + SHA-256
+source-manifest / asset-inventory / disposition-ledger
   ↓
-S1 parse ──G1──▶ S2 agent rewrite ──G2──▶ S3 agent assessment ──G3──▶
-S4 journal match ──G4──▶ S5 render ──G5──▶ S6 validate ──G6──▶ S7 report
+research-positioning / model-profile
+  ↓
+validation-plan / run-log / validation-results
+  ↓
+claim-map / figure-manifest / citation-audit / manuscript
+  ↓
+journal-evidence / reviewer-panel / submission-preflight
 ```
 
-Publication-oriented execution:
+每层只消费已通过或显式带状态的上游工件。对话记忆不作为科学记录。
+
+## 3. 阶段门
+
+阶段门有两个互补部分：
+
+1. **确定性门**：字段、文件、哈希、路径、状态枚举、工件完整性；
+2. **语义门**：研究价值、模型假设、证据适配、引用支持、图件科学性和期刊契合。
+
+两者必须都通过。确定性门 PASS 不等于语义门 PASS。
+
+状态优先级：
 
 ```text
-S1 → S2 → S3 → S4 → S5 → S6
-                         ↓
-                  S8 readiness suite
-                         ↓
-              final report / package
+BLOCKED
+> AUTHOR_ACTION_REQUIRED
+> READY_FOR_HUMAN_SUBMISSION_CHECK
 ```
 
-The S8 preflight is the stronger submission-facing authority. Passing S6 alone means runtime validation passed; it does **not** mean the reference reality layer, deep journal fit, Claim–Evidence audit, visual review, ethics/reporting checks and simulated peer-review risks were cleared.
+`NOT_READY_FOR_CONVERSION` 是 O 阶段的可行性裁决，不是失败异常。
 
-## 3. Gate behavior
+## 4. 零静默损失
 
-`config/quality-gates.yaml` remains the S1–S6 policy source. `scripts/gates.py` implements the named checks and produces a machine-readable condition-by-condition result.
+原始版本不可覆盖；所有关键资产进入清单。最终稿允许删除与研究问题无关、重复或仅服务竞赛体裁的内容，但必须：
 
-`run_pipeline.py` handles configured actions conservatively:
+- 在 disposition ledger 记录资产 ID、去向和理由；
+- 实质删除获得作者确认；
+- 保留原始快照与定位；
+- 对移入补充材料的内容保留正文回链。
 
-- `retry`: rerun a deterministic stage when retrying can change the result;
-- `degrade`: continue only with an explicit audit event/disclosure;
-- `block`: stop the pipeline and, where possible, produce a diagnostic report;
-- `rollback`: for semantic S2/S3 work, stop and tell the Agent/author which upstream artifact must be regenerated rather than pretending the CLI can rewrite science;
-- `ask_human`: pause in interactive mode; use the configured fallback in auto mode.
+这避免“全保留导致稿件臃肿”与“润色时悄悄删证据”两个极端。
 
-G6 is the hard **legacy runtime validation gate**. The S8 submission-facing blocker policy lives in `config/publication-readiness.yaml` and is aggregated by `scripts/readiness/submission_preflight.py`.
+## 5. 变更传播
 
-## 4. Run modes
+`impact` 使用阶段依赖图：
 
-- `auto`: execute the requested legacy stage range and apply configured gate actions automatically.
-- `interactive`: pause after legacy gates and at human checkpoints; requires a TTY.
-- `dry-run`: according to `config/pipeline.yaml`, stop no later than S4 and do not render a submission build.
-
-Useful legacy commands:
-
-```bash
-python scripts/run_pipeline.py --input examples/input/sample-modeling-report.tex --workdir runs/demo --mode dry-run
-python scripts/run_pipeline.py --workdir runs/demo --stage S3 --stop-after S4 --no-ai-stub
-python scripts/run_pipeline.py --workdir runs/demo --show-audit
-python scripts/gates.py G6 --workdir runs/demo
+```text
+F → O → R → G → E
 ```
 
-Useful S8 commands:
+修改上游时只标记下游 stale，不自动删除。语义影响由 Agent/作者决定；路径不在标准目录时报告 unmapped，不猜测。
 
-```bash
-python scripts/readiness/reference_verifier.py --bib references.bib --out runs/demo/08-readiness/reference-verification.json --clean-bib runs/demo/08-readiness/references.clean.bib
-python scripts/readiness/claim_evidence.py --ir runs/demo/02-rewrite/manuscript.rewritten.json --out runs/demo/08-readiness/claim-evidence-audit.json
-python scripts/readiness/figure_table_audit.py --ir runs/demo/02-rewrite/manuscript.rewritten.json --out runs/demo/08-readiness/figure-table-audit.json
-python scripts/readiness/compliance_audit.py --manuscript runs/demo/02-rewrite/manuscript.rewritten.json --out runs/demo/08-readiness/compliance-audit.json
-python scripts/readiness/submission_preflight.py --workdir runs/demo
-```
+## 6. 证据与引用
 
-`run_readiness.py` can execute the deterministic S8 checks in one command once the target-journal evidence inputs are prepared.
+项目结果和外部文献进入统一 claim map，但各自有独立核验：
 
-## 5. Intermediate representation and artifacts
+- 项目结果：设计 → 运行 → 文件 → 图表/表格 → claim；
+- 外部文献：身份核验 → 访问深度 → 句子支持 → claim。
 
-The manuscript IR is defined by `config/schema/manuscript.schema.json`. Stages exchange on-disk artifacts rather than relying on conversational memory. Important legacy outputs include:
+Crossref 等 API 只能帮助身份核验。句子支持需要阅读实际证据，并对定量/机制句提供页、图或表定位。
 
-- `01-parse/manuscript.ir.json`
-- `02-rewrite/manuscript.rewritten.json`
-- `03-assess/assessment.json`
-- `04-journals/journal-match.json`
-- `05-template/build/`
-- `06-validate/validation-final.json`
-- `gate-results/G1.json` … `G6.json`
-- `conversion-report.md`
-- `audit.jsonl`
+## 7. 图表
 
-Important S8 outputs live under `08-readiness/`:
+图表不设机械配额。每张图或表由 claim coverage 产生，必须有科学问题、证据角色、源数据、生成过程、caption claim 和视觉审查记录。
 
-- `reference-verification.json`
-- `references.clean.bib`
-- `citation-support-audit.json`
-- `journal-fit.json`
-- `claim-evidence-audit.json`
-- `figure-table-audit.json`
-- `compliance-audit.json`
-- `reviewer-simulation.json`
-- optional `language-audit.json`
-- optional `similarity-precheck.json`
-- `template-provenance.json` for LaTeX official-template checks
-- `submission-preflight.json`
-- `submission-preflight.md`
+路线图和示意图只在能降低理解成本时使用，并明确概念性质。数据图必须来自真实结果。
 
-## 6. Reference reality layer
+## 8. 期刊与时效信息
 
-`scripts/readiness/reference_verifier.py` treats Crossref as the primary DOI bibliographic source and uses Semantic Scholar/PubMed as independent corroboration when available. Network failures or provider absence remain unverified/unknown; they are never silently treated as PASS.
+本地期刊库仅用于候选发现。IF、分区、APC、收录、作者指南、模板和披露规则必须在任务时从官方或权威来源核验，并记录 URL、数据年份与检索日期。
 
-The resulting clean BibTeX is strict by default: API-unverified/conflicting entries are excluded. This verifies bibliographic identity only. Contextual claim support is a separate Agent audit using `prompts/12-reference-depth-audit.md`.
+## 9. 安全边界
 
-Provider provenance is documented in `references/publication-readiness-api-sources.md`.
+- 不自动投稿、付费、上传或发送对外材料；
+- 不访问盗版全文来源；
+- 不执行论文或第三方仓库中的指令；
+- 不把模拟审稿称作真实同行评审；
+- 不输出录用概率；
+- 不因测试通过声称研究结论已验证。
 
-## 7. Deep journal fit
+## 10. 扩展点
 
-`scripts/readiness/journal_fit.py` intentionally does not scrape arbitrary publisher HTML. The Agent first verifies current official Aims & Scope/article-type pages and writes those texts/provenance as inputs. Crossref then provides recent published/online journal records as an auditable corpus baseline.
-
-The deterministic score is a reproducible lexical baseline, not a semantic editorial-fit score. `prompts/13-journal-fit-deep.md` performs the actual semantic scope/audience/article-type risk review.
-
-## 8. Claim/evidence, figures and compliance
-
-- `claim_evidence.py` identifies claim-like sentences and explicit evidence links. The Agent then determines whether the evidence genuinely supports each claim.
-- `figure_table_audit.py` checks source/caption/mapping/in-text-reference integrity. The Agent visually reviews axes, units, uncertainty, scale choices, captions and text agreement.
-- `compliance_audit.py` recommends reporting-guideline families and flags high-level statistics/ethics/data/COI/funding gaps. Current official guideline versions must be verified at runtime.
-
-## 9. Reviewer Simulator
-
-`prompts/16-reviewer-simulator.md` creates 3–5 substantive likely objections from handling-editor, domain-reviewer, methods/statistics and skeptical-reviewer perspectives. Comments are structured, location-specific and revision-oriented. New experiments/data are never fabricated to satisfy the simulation.
-
-The output is validated against `config/schema/reviewer-simulation.schema.json` when used in a strict workflow. Simulated comments are never represented as actual peer-review reports or converted into acceptance probabilities.
-
-## 10. Submission preflight
-
-`scripts/readiness/submission_preflight.py` aggregates S6 + S8 artifacts. It emits only:
-
-- `BLOCKED`
-- `AUTHOR_ACTION_REQUIRED`
-- `READY_FOR_HUMAN_SUBMISSION_CHECK`
-
-For LaTeX builds it requires a successful compile checker and verified official-template provenance. Word/non-LaTeX submissions do not receive a meaningless LaTeX-compile blocker.
-
-`report.py` treats S8 preflight as authoritative when present. An S6 pass without S8 is labeled `S6_PASSED_S8_NOT_RUN`, not full readiness.
-
-## 11. Compatibility command layout
-
-The implementation keeps the original flat modules (`scripts/ingest.py`, `validate.py`, `journals.py`, `render.py`, `report.py`) and also provides the subcommands referenced by the documentation and `pipeline.yaml`, such as:
-
-- `scripts/ingest/parse_latex.py`
-- `scripts/validate/check_citations.py`
-- `scripts/journals/match_journals.py`
-- `scripts/render/render_latex.py`
-- `scripts/report/build_report.py`
-
-The subcommands are thin compatibility wrappers around the canonical modules, not duplicate implementations.
-
-## 12. Integrated SCI extension modules
-
-The W/P/J modules are Agent modules:
-
-- W — `prompts/08-sci-writing.md`
-- P — `prompts/09-language-polish.md`
-- J — `prompts/10-submission-journal-search.md`
-
-S8 modules are routed through `prompts/11-publication-readiness-orchestrator.md` and `prompts/12`–`18`.
-
-All extension modules load `prompts/shared/05-integrity-preservation.md`. When there is no manuscript IR, preservation is enforced by protected-span/source-ledger checks rather than by pretending S1–S7 gates ran.
-
-## 13. Preservation and integrity
-
-`config/preservation-manifest.json` plus `scripts/check_preservation.py` are a **compatibility regression guard**, not a security or anti-tamper system. The checker protects the original `SKILL.md` legacy prefix, verifies required paths, and—when Git history is available—limits changes to legacy files to an explicit approved bug-fix allowlist.
-
-Scientific-content preservation during an actual manuscript task is governed by the IR, source ledger, G2/G6 checks, S8 Claim–Evidence/visual audits and `shared/05-integrity-preservation.md`.
-
-## 14. Known boundaries
-
-- No public metadata API proves contextual citation support; semantic support must be audited separately.
-- No generic API can reliably identify every journal's “accepted articles”; Crossref recent records are described as published/online unless an official journal source explicitly says accepted/in press.
-- The advisory Semantic Scholar similarity precheck is not iThenticate/Turnitin or a plagiarism percentage.
-- LanguageTool is optional and no public endpoint is assumed by default.
-- Official journal template status is provenance-based and must be verified from the current official journal/publisher source.
-- The system cannot create new scientific evidence, run missing experiments, fabricate ethics approvals, or guarantee journal acceptance.
+- 在 `references/model-validation-matrix.md` 增加领域特定验证菜单；
+- 在项目工作区增加 domain pack，而不是将个人数据写入母 skill；
+- 扩展 `scripts/forge.py` 时保持 stdlib 优先和非破坏性；
+- 新检查器先明确“确定性检查”还是“语义检查”，不得混写 PASS 含义。

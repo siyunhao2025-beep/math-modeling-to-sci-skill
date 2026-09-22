@@ -30,6 +30,11 @@ def _first_existing(*paths: Path) -> Path | None:
     return None
 
 
+def _portable(path: Path | None) -> str | None:
+    """Return a cross-platform serialized path with forward slashes."""
+    return path.as_posix() if path is not None else None
+
+
 def _load_optional(path: Path) -> dict:
     if not path.is_file():
         return {}
@@ -112,20 +117,20 @@ def resolve_inputs(
     )
 
     return {
-        "workdir": str(root),
-        "ir": str(resolved_ir) if resolved_ir else None,
-        "bib": str(resolved_bib) if resolved_bib else None,
-        "manuscript": str(resolved_manuscript) if resolved_manuscript else None,
+        "workdir": _portable(root),
+        "ir": _portable(resolved_ir),
+        "bib": _portable(resolved_bib),
+        "manuscript": _portable(resolved_manuscript),
         "journal_name": journal_name or ev.get("journal_name") or rec.get("name"),
         "issn": issn or ev.get("issn") or rec.get("issn"),
-        "aims_scope_file": str(resolved_scope) if resolved_scope else None,
+        "aims_scope_file": _portable(resolved_scope),
         "scope_source_url": scope_source_url or ev.get("scope_source_url") or ev.get("aims_scope_source_url"),
-        "article_types_file": str(resolved_types) if resolved_types else None,
+        "article_types_file": _portable(resolved_types),
         "article_type": article_type or ev.get("article_type"),
         "article_type_source_url": article_type_source_url or ev.get("article_type_source_url"),
-        "build_tex": str(resolved_build_tex) if resolved_build_tex else None,
-        "source_root": source_root or str(root / "00-input"),
-        "journal_match": str(jm_path) if jm_path.is_file() else None,
+        "build_tex": _portable(resolved_build_tex),
+        "source_root": source_root or _portable(root / "00-input"),
+        "journal_match": _portable(jm_path) if jm_path.is_file() else None,
         "journal_evidence_meta": ev.get("_source_file"),
     }
 

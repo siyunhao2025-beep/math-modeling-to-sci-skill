@@ -1,25 +1,24 @@
 #!/usr/bin/env python3
-"""Executable regression audit for the 18 risks recorded in the review register.
+"""Offline repository audit for the reviewed FORGE v2 distribution.
 
-This script turns the external review questions into repository checks. It is
-intentionally conservative: PASS means the specific regression is guarded by
-code/docs/tests, not that the scientific workflow is perfect or acceptance is
-predicted. It performs no network calls.
+PASS means the named packaging or regression property is present. It does not
+certify scientific validity, journal acceptance, or live external evidence.
 """
 from __future__ import annotations
 
-import json
+import importlib.util
 from pathlib import Path
 import re
 
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_REF_RE = re.compile(r"(?<![\w.-])(scripts/[A-Za-z0-9_./-]+\.py)")
-COMPAT = ("ingest", "journals", "render", "validate")
+REF_RE = re.compile(r"`(references/[A-Za-z0-9_./-]+\.md)`")
 
 
 def text(rel: str) -> str:
-    p = ROOT / rel
-    return p.read_text(encoding="utf-8") if p.is_file() else ""
+    path = ROOT / rel
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
 def exists(rel: str) -> bool:
@@ -32,186 +31,174 @@ def result(risk: str, ok: bool, evidence: str, impact: str, fix: str = "") -> di
         "status": "PASS" if ok else "FAIL",
         "evidence": evidence,
         "impact": impact,
-        "fix": fix if not ok else "—",
+        "fix": fix if not ok else "-",
     }
+
+
+def frontmatter_keys(body: str) -> list[str]:
+    lines = body.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return []
+    try:
+        end = lines.index("---", 1)
+    except ValueError:
+        return []
+    return [m.group(1) for line in lines[1:end]
+            if (m := re.match(r"^([A-Za-z0-9_-]+):", line))]
 
 
 def markdown_script_refs() -> list[tuple[str, str]]:
     refs: list[tuple[str, str]] = []
-    for p in ROOT.rglob("*.md"):
-        if any(part in {".git", "runs"} for part in p.parts):
+    for path in ROOT.rglob("*.md"):
+        if any(part in {".git", "runs", ".pytest_cache"} for part in path.parts):
             continue
-        body = p.read_text(encoding="utf-8", errors="replace")
+        body = path.read_text(encoding="utf-8", errors="replace")
         for ref in SCRIPT_REF_RE.findall(body):
-            if "..." in ref:  # illustrative placeholder, not a concrete command path
-                continue
-            refs.append((str(p.relative_to(ROOT)), ref))
+            if "..." not in ref:
+                refs.append((path.relative_to(ROOT).as_posix(), ref))
     return refs
+
+
+def preservation_errors() -> list[str]:
+    path = ROOT / "scripts" / "check_preservation.py"
+    spec = importlib.util.spec_from_file_location("forge_preservation_check", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    errors, _ = module.verify(ROOT, ROOT / "config" / "preservation-manifest.json")
+    return errors
 
 
 def audit() -> list[dict]:
     out: list[dict] = []
-    runner = text("scripts/run_pipeline.py")
-    rr = text("scripts/readiness/run_readiness.py")
+    skill = text("SKILL.md")
     readme = text("README.md")
-    prompt_readme = text("prompts/README.md")
-    changelog = text("CHANGELOG.md")
-    router = text("prompts/00-extension-router.md")
-    manifest = json.loads(text("config/preservation-manifest.json") or "{}")
+    runner = text("scripts/run_pipeline.py")
+    bridge = text("scripts/readiness/pipeline_bridge.py")
+    provenance = text("references/provenance.md")
 
-    # V2-F1 — S8 must be reachable from the main runtime and user docs.
-    ok = all(x in runner for x in ("run_readiness_from_workdir", "--readiness", "[S8]")) and "--readiness" in readme
-    out.append(result("V2-F1", ok,
-        "run_pipeline.py imports/calls readiness bridge; README documents --readiness",
-        "Without this, publication-readiness is an orphan feature.",
-        "Wire pipeline_bridge into S7 pre-report execution and document it."))
+    keys = frontmatter_keys(skill)
+    out.append(result("F2-01", keys == ["name", "description"], f"frontmatter keys={keys}",
+                      "Extra metadata can make the skill invalid for current loaders.",
+                      "Keep only name and description in SKILL.md frontmatter."))
 
-    # V2-F2 — compatibility directories may coexist only as package-less CLI shims.
-    collisions_ok = True
-    details = []
-    for name in COMPAT:
-        flat = ROOT / "scripts" / f"{name}.py"
-        directory = ROOT / "scripts" / name
-        package_init = directory / "__init__.py"
-        this_ok = flat.is_file() and directory.is_dir() and not package_init.exists()
-        collisions_ok &= this_ok
-        details.append(f"{name}: flat={flat.is_file()} shim_dir={directory.is_dir()} package={package_init.exists()}")
-    out.append(result("V2-F2", collisions_ok, "; ".join(details),
-        "A same-name importable package could shadow the canonical flat runtime module.",
-        "Keep shim directories package-less or rename them; add namespace regression tests."))
+    lines = len(skill.splitlines())
+    out.append(result("F2-02", 0 < lines < 500, f"SKILL.md lines={lines}",
+                      "An oversized entry point consumes context and hides routing.",
+                      "Move detailed rules into directly linked references."))
 
-    # V1-F1 — every concrete documented scripts/*.py reference must exist.
+    refs = sorted(set(REF_RE.findall(skill)))
+    missing_refs = [rel for rel in refs if not exists(rel)]
+    out.append(result("F2-03", len(refs) >= 8 and not missing_refs,
+                      f"linked references={len(refs)} missing={missing_refs}",
+                      "Broken progressive-disclosure links make routes unusable.",
+                      "Restore every reference linked by SKILL.md."))
+
+    agent = text("agents/openai.yaml")
+    ok = all(x in agent for x in ("display_name:", "short_description:",
+                                   "default_prompt:", "$math-modeling-to-sci"))
+    out.append(result("F2-04", ok, "agents/openai.yaml UI metadata and explicit default invocation",
+                      "Stale UI metadata weakens discovery and launches the wrong task.",
+                      "Regenerate agents/openai.yaml from SKILL.md."))
+
+    hero = ROOT / "assets" / "brand" / "m2sci-forge-hero.png"
+    ok = hero.is_file() and hero.stat().st_size > 100_000 and "assets/brand/m2sci-forge-hero.png" in readme
+    out.append(result("F2-05", ok, f"hero exists={hero.is_file()} bytes={hero.stat().st_size if hero.is_file() else 0}",
+                      "A missing or placeholder hero breaks the requested launch presentation.",
+                      "Restore the final brand artwork and README link."))
+
+    slogan = "不把建模报告翻译成英文；把模型证据锻造成经得起审稿的 SCI 论文。"
+    out.append(result("F2-06", slogan in skill and slogan in readme, "brand slogan synchronized",
+                      "Inconsistent positioning makes the skill look like generic polishing.",
+                      "Use the approved slogan in both entry point and README."))
+
+    ok = all(exists(x) for x in ("scripts/forge.py", "config/forge-trace.yaml",
+                                  "config/schema/forge-project.schema.json"))
+    out.append(result("F2-07", ok, "FORGE CLI, config and project schema present",
+                      "The named framework would otherwise be documentation-only.",
+                      "Restore the deterministic FORGE contract layer."))
+
+    forge_body = text("scripts/forge.py")
+    ok = all(f'add_parser("{name}"' in forge_body for name in ("init", "status", "gate", "impact"))
+    out.append(result("F2-08", ok, "FORGE CLI exposes init/status/gate/impact",
+                      "Missing commands break the advertised lifecycle.",
+                      "Implement and test every documented FORGE command."))
+
+    out.append(result("F2-09", exists("tests/test_forge.py") and "test_impact" in text("tests/test_forge.py"),
+                      "FORGE gate and impact regression tests present",
+                      "Untested gates can silently promote incomplete artifacts.",
+                      "Add contract, blocker and propagation tests."))
+
+    orphan_bridges = [
+        path for path in ("scripts/corpus.py", "scripts/research.py", "scripts/upstream.py")
+        if exists(path)
+    ]
+    ok = not exists("research-mother") and not orphan_bridges
+    out.append(result("F2-10", ok,
+                      f"no nested Research Mother copy or orphan bridges={orphan_bridges}",
+                      "Vendoring a second skill or retaining bridges to removed code creates conflicting rules and broken entry points.",
+                      "Keep attributed principles, not a nested repository or dead compatibility scripts."))
+
+    ok = all(exists(x) for x in ("scripts/run_pipeline.py", "scripts/gates.py",
+                                  "scripts/readiness/run_readiness.py"))
+    out.append(result("F2-11", ok, "legacy S1-S8 compatibility runtime retained",
+                      "A clean redesign must not discard proven parsing/readiness utilities.",
+                      "Restore the compatibility runtime or document a migration."))
+
+    ok = all(x in runner for x in ("run_readiness_from_workdir", "--readiness", "[S8]"))
+    out.append(result("F2-12", ok, "S8 remains reachable from run_pipeline.py",
+                      "Publication readiness would become an orphan feature.",
+                      "Keep the S8 bridge wired before final reporting."))
+
+    risky_glyphs = tuple(chr(codepoint) for codepoint in (0x2705, 0x26D4, 0x274C))
+    bad_console = [x for x in risky_glyphs if x in runner]
+    out.append(result("F2-13", not bad_console, f"unsafe console glyphs={bad_console}",
+                      "Legacy Windows consoles can crash on unencodable status glyphs.",
+                      "Use ASCII status markers in command-line output."))
+
+    ok = "def _portable" in bridge and ".as_posix()" in bridge
+    out.append(result("F2-14", ok, "readiness bridge serializes portable paths",
+                      "OS-specific separators break tests and exchanged artifacts.",
+                      "Serialize resolved paths with forward slashes."))
+
+    errors = preservation_errors()
+    out.append(result("F2-15", not errors, f"distribution contract errors={errors}",
+                      "Missing reviewed entry points or capability files create incomplete releases.",
+                      "Update required paths and the reviewed SKILL contract together."))
+
     bad_refs = [(src, ref) for src, ref in markdown_script_refs() if not exists(ref)]
-    out.append(result("V1-F1", not bad_refs, f"missing documented script refs={bad_refs[:10]}",
-        "Copy-paste commands would fail with No such file.",
-        "Fix the documented path or add a real compatibility CLI."))
+    out.append(result("F2-16", not bad_refs, f"missing documented scripts={bad_refs[:10]}",
+                      "Copy-paste commands would fail.",
+                      "Fix the documented path or restore the real script."))
 
-    # V1-F2 — canonical example + explicitly-labelled legacy alias.
-    alias = text("examples/input/sample-model-report.tex")
-    ok = exists("examples/input/sample-modeling-report.tex") and exists("examples/input/sample-model-report.tex") and "COMPATIBILITY ALIAS" in alias
-    out.append(result("V1-F2", ok, "canonical sample-modeling-report.tex + labelled legacy alias",
-        "Two unexplained near-identical filenames confuse users and tests.",
-        "Keep the legacy path only as an explicit compatibility alias; use canonical name in new docs."))
+    statuses = ("NOT_READY_FOR_CONVERSION", "BLOCKED", "AUTHOR_ACTION_REQUIRED",
+                "READY_FOR_HUMAN_SUBMISSION_CHECK")
+    ok = all(x in skill and x in readme for x in statuses)
+    out.append(result("F2-17", ok, "four conservative top-level statuses synchronized",
+                      "Unbounded success labels invite false submission-readiness claims.",
+                      "Keep the four reviewed statuses in both user and agent docs."))
 
-    # V1-F3 — executable quality-gate path + runtime regression test.
-    ok = "GateEvaluator" in runner and ".evaluate(gate_id)" in runner and exists("tests/test_runtime_gates.py")
-    out.append(result("V1-F3", ok, "GateEvaluator.evaluate + test_runtime_gates.py",
-        "A decorative gate lets failed science/validation flow into output.",
-        "Evaluate G1-G6 and stop/retry/degrade according to configuration."))
-
-    # V2-F3 — one canonical implementation; compatibility commands must delegate.
-    delegate_ok = True
-    shim_hits = []
-    for rel in ["scripts/ingest/parse_latex.py", "scripts/ingest/parse_docx.py", "scripts/journals/match_journals.py", "scripts/render/render_latex.py", "scripts/validate/check_citations.py"]:
-        body = text(rel)
-        this_ok = "load_flat_module" in body or "_validation_cli" in body or "_compat" in body
-        delegate_ok &= this_ok
-        shim_hits.append(f"{rel}:{this_ok}")
-    out.append(result("V2-F3", delegate_ok, "; ".join(shim_hits),
-        "Parallel independent implementations drift and split fixes.",
-        "Make subdirectory CLIs thin delegates to the canonical flat modules."))
-
-    # V2-F4 — governance self-consistency is about reviewed changes, not required-path count.
-    approved = set(manifest.get("approved_bugfix_paths", []))
-    reasons = set((manifest.get("approved_bugfix_reasons") or {}).keys())
-    ok = bool(approved) and approved <= reasons and manifest.get("policy", {}).get("baseline_file_changes_require_allowlist") is True
-    out.append(result("V2-F4", ok, f"approved paths={len(approved)}; reasons cover all={approved <= reasons}",
-        "An incoherent allowlist can either block legitimate maintenance or silently permit unexplained baseline edits.",
-        "Require one review reason per approved baseline path; do not equate required existence paths with mutable allowlist."))
-
-    # V2-F5 — S8 should be open-box from workdir and degrade honestly.
-    formerly_required = ["--ir", "--bib", "--manuscript", "--journal-name", "--issn", "--aims-scope-file", "--scope-source-url"]
-    manual_required = [flag for flag in formerly_required if f'ap.add_argument("{flag}", required=True' in rr]
-    ok = not manual_required and 'ap.add_argument("--workdir", required=True' in rr and exists("scripts/readiness/pipeline_bridge.py")
-    out.append(result("V2-F5", ok, f"manual required flags={manual_required}; pipeline_bridge={exists('scripts/readiness/pipeline_bridge.py')}",
-        "A hand-fed readiness suite is not usable as part of the main workflow.",
-        "Auto-resolve pipeline artifacts; keep official evidence missing as a blocker and document network degradation."))
-
-    # V2-F6 — preservation wording and legacy sample must be explicitly non-security/compatibility.
-    guard = text("scripts/check_preservation.py")
-    ok = "not an anti-tamper" in guard and "COMPATIBILITY ALIAS" in alias
-    out.append(result("V2-F6", ok, "regression guard disclaimer + labelled compatibility sample",
-        "Security-like wording or unexplained duplicate samples create false confidence/confusion.",
-        "Use compatibility-regression terminology and label the legacy example."))
-
-    # V1-F4 — prompt inventory must include every actual prompt.
-    prompt_files = []
-    for p in (ROOT / "prompts").rglob("*.md"):
-        if p.name == "README.md":
-            continue
-        prompt_files.append(str(p.relative_to(ROOT / "prompts")))
-    missing_prompts = [p for p in prompt_files if Path(p).name not in prompt_readme]
-    out.append(result("V1-F4", not missing_prompts, f"unlisted prompts={missing_prompts}",
-        "Unlisted prompts become invisible/orphaned in maintenance and routing.",
-        "Keep prompts/README.md inventory synchronized, including shared guidance files."))
-
-    # V1-F5 — known architecture/troubleshooting references must resolve.
-    ok = exists("docs/architecture.md") and exists("references/troubleshooting.md")
-    out.append(result("V1-F5", ok, "docs/architecture.md and references/troubleshooting.md",
-        "Dead links break the documented recovery path.",
-        "Restore referenced docs or remove stale references."))
-
-    # V1-F6 — extensions must be routed and capability boundaries explicit.
-    normalized_router = router.replace("**", "").lower()
-    ok = all(token in router for token in ("08-sci-writing.md", "09-language-polish.md", "10-submission-journal-search.md", "11-publication-readiness-orchestrator.md")) and "do not claim" in normalized_router
-    out.append(result("V1-F6", ok, "extension router covers W/P/J/S8 and states truthfulness boundary",
-        "Prompt-only features can be mistaken for deterministic executed checks.",
-        "Route every extension and explicitly distinguish Agent-only from runtime checks."))
-
-    # V1-F7 — extension governance is anchored to a prior commit and reviewed change list.
-    ext_base = manifest.get("extension_baseline_commit")
-    ext_approved = set(manifest.get("approved_extension_change_paths", []))
-    ext_reasons = set((manifest.get("approved_extension_change_reasons") or {}).keys())
-    ok = bool(ext_base) and ext_approved <= ext_reasons and "extension_baseline_commit" in text("scripts/check_preservation.py")
-    out.append(result("V1-F7", ok, f"extension baseline={ext_base}; reviewed extension changes={len(ext_approved)}",
-        "Presence-only extension checks allow safety/readiness behavior to weaken without a regression signal.",
-        "Compare governed extension paths against a fixed prior commit and require reviewed reasons for changes."))
-
-    # V1-F8 — real mode must be artifact-consumer, not a fake LLM toggle.
-    ok = "real S2 artifact" in runner and "does not call an LLM" in runner and "--no-ai-stub" in runner
-    out.append(result("V1-F8", ok, "--no-ai-stub explicitly consumes real Agent artifacts",
-        "A misleading production toggle can crash downstream or imply nonexistent AI integration.",
-        "Require pre-existing real Agent artifacts and document the boundary."))
-
-    # V1-F9 — deliberate identifier mismatch must be documented, not silently changed.
-    ok = "math-modeling-to-sci-skill" in readme and "math-modeling-to-sci`" in readme and "Skill 标识" in readme
-    out.append(result("V1-F9", ok, "README documents repository/distribution name vs Skill identifier",
-        "Unexplained name mismatch confuses installation and invocation.",
-        "Document the intentional compatibility identifier; do not mutate the protected legacy frontmatter."))
-
-    # V1-F10 — CHANGELOG concrete script paths must exist.
-    bad_change = [("CHANGELOG.md", ref) for ref in SCRIPT_REF_RE.findall(changelog) if "..." not in ref and not exists(ref)]
-    out.append(result("V1-F10", not bad_change, f"bad CHANGELOG script refs={bad_change}",
-        "A changelog that names nonexistent architecture is misleading provenance.",
-        "Correct historical paths and avoid claiming files/workflows that do not exist."))
-
-    # V1-F11 — mixed shared naming is acceptable only with an explicit convention.
-    ok = "shared 命名约定" in prompt_readme and "05-" in prompt_readme and "06-" in prompt_readme
-    out.append(result("V1-F11", ok, "prompts/README.md documents legacy shared vs numbered additive policies",
-        "Undocumented mixed naming looks accidental and encourages inconsistent additions.",
-        "Document the compatibility naming convention rather than renaming referenced legacy files."))
-
-    # V1-F12 — CI must exist and run pytest + this audit.
-    ci = text(".github/workflows/ci.yml")
-    ok = exists(".github/workflows/ci.yml") and exists(".github/workflows/validate-skill.yml") and "pytest" in ci and "audit_repo.py" in ci
-    out.append(result("V1-F12", ok, "ci.yml + validate-skill.yml; CI runs pytest and audit_repo.py",
-        "Without CI, regressions can merge unnoticed.",
-        "Run static audit, preservation guard and pytest on pull requests."))
-
+    commits = ("3d044caf26d602ba08eddc93397b3923397b82bc",
+               "a6804fc85bc7336a3b418bf4ba29d0e3956159ed",
+               "ecee288b4458c328236790111b5fa7c875383de7")
+    ok = all(x in provenance for x in commits) and "MIT" in text("LICENSE") and text("VERSION").strip() == "2.0.0"
+    out.append(result("F2-18", ok, "three audited source commits, MIT license and VERSION=2.0.0",
+                      "Missing provenance or versioning obscures what was actually integrated.",
+                      "Record audited commits, license boundaries and release version."))
     return out
 
 
 def main() -> int:
     results = audit()
-    failed = [r for r in results if r["status"] != "PASS"]
-    print("REPOSITORY RISK AUDIT")
-    for r in results:
-        marker = "✅" if r["status"] == "PASS" else "❌"
-        print(f"{marker} {r['risk']} {r['status']} — {r['evidence']}")
-        if r["status"] != "PASS":
-            print(f"   impact: {r['impact']}")
-            print(f"   fix: {r['fix']}")
-    print(f"SUMMARY: pass={len(results)-len(failed)} fail={len(failed)} total={len(results)}")
+    failed = [item for item in results if item["status"] != "PASS"]
+    print("FORGE V2 REPOSITORY AUDIT")
+    for item in results:
+        marker = "[OK]" if item["status"] == "PASS" else "[FAIL]"
+        print(f"{marker} {item['risk']} {item['status']} - {item['evidence']}")
+        if item["status"] != "PASS":
+            print(f"   impact: {item['impact']}")
+            print(f"   fix: {item['fix']}")
+    print(f"SUMMARY: pass={len(results) - len(failed)} fail={len(failed)} total={len(results)}")
     return 1 if failed else 0
 
 

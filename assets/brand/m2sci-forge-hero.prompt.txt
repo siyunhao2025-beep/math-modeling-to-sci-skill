@@ -1,0 +1,13 @@
+Use case: ads-marketing
+Asset type: premium GitHub repository hero banner for an academic AI skill
+Primary request: Create a visually arresting, sophisticated wide hero illustration for “M²SCI Forge”, showing mathematical-modeling evidence being transformed into a reviewer-ready scientific paper.
+Scene/backdrop: a dark obsidian-to-midnight-navy academic studio with subtle depth, not a literal factory.
+Subject: left side contains elegant floating mathematical equations, data grids, optimization contours, simulation plots, and model diagrams; center contains a luminous precision forge/core made from interlocking evidence nodes and traceable links, transforming the raw modeling artifacts; right side resolves into a clean white scientific manuscript with structured figures, citations, reviewer annotations, and a subtle journal page silhouette.
+Style/medium: premium editorial 3D illustration mixed with scientific data visualization, cinematic but restrained, polished enough for a top open-source project launch.
+Composition/framing: wide 16:9 landscape, strong left-to-right transformation flow, layered depth, generous safe margins, clear focal point at center, visually balanced for a GitHub README banner.
+Lighting/mood: intelligent, rigorous, ambitious, trustworthy; cyan/teal evidence glow with small warm amber forge accents against deep navy.
+Color palette: midnight navy, graphite, white paper, cyan, teal, restrained amber; colorblind-friendly contrast.
+Materials/textures: glass-like data planes, fine metallic links, crisp paper, subtle particles, precise luminous paths.
+Text: no text, no letters, no logos, no watermark.
+Constraints: communicate evidence traceability, scientific rigor, model validation, and editorial review; make equations and plots visually plausible but not legible claims; no people, no robots, no humanoid AI, no trophy, no graduation cap, no generic stock-photo imagery.
+Avoid: clutter, neon cyberpunk excess, fantasy blacksmith imagery, flames dominating the scene, illegible pseudo-typography, fake journal branding, red-green-only encoding.

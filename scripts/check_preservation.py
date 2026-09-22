@@ -1,17 +1,10 @@
 #!/usr/bin/env python3
-"""Compatibility-regression guard for legacy core and reviewed extensions.
+"""Distribution-contract guard for the FORGE v2 skill package.
 
-This checker is intentionally *not* an anti-tamper or security mechanism.
-With Git history available, two fixed commits are used as independent review
-anchors:
-
-- ``baseline_commit`` protects the original v1.0.0 repository surface;
-- ``extension_baseline_commit`` governs already-existing post-v1.0 extension
-  files so safety/readiness behavior cannot drift without an explicit reviewed
-  allowlist reason.
-
-New files are allowed. Without Git history, validation degrades to the protected
-SKILL.md prefix plus required-path checks and clearly reports that limitation.
+This checker is intentionally *not* an anti-tamper or security mechanism. It
+protects the reviewed v2 SKILL entry point and required capability paths. When
+an optional Git anchor is configured, the legacy history checks remain
+available; normal distributed skill archives do not require Git metadata.
 """
 from __future__ import annotations
 
@@ -42,8 +35,8 @@ def _git_commit_available(repo_root: Path, commit: str | None) -> bool:
     return _git(repo_root, "cat-file", "-e", f"{commit}^{{commit}}").returncode == 0
 
 
-def _verify_skill_prefix(repo_root: Path, manifest: dict, errors: list[str]) -> None:
-    info = manifest["legacy_skill_prefix"]
+def _verify_skill_contract(repo_root: Path, manifest: dict, errors: list[str]) -> None:
+    info = manifest["skill_contract"]
     path = repo_root / "SKILL.md"
     if not path.exists():
         errors.append("SKILL.md is missing")
@@ -51,11 +44,11 @@ def _verify_skill_prefix(repo_root: Path, manifest: dict, errors: list[str]) -> 
     data = path.read_bytes()
     n = int(info["bytes"])
     if len(data) < n:
-        errors.append(f"SKILL.md shorter than protected legacy prefix: {len(data)} < {n}")
+        errors.append(f"SKILL.md shorter than reviewed contract: {len(data)} < {n}")
         return
     actual = sha256_bytes(data[:n])
     if actual != info["sha256"]:
-        errors.append(f"SKILL.md legacy prefix changed: {actual} != {info['sha256']}")
+        errors.append(f"SKILL.md reviewed contract changed: {actual} != {info['sha256']}")
 
 
 def _verify_required_paths(repo_root: Path, manifest: dict, errors: list[str]) -> None:
@@ -176,7 +169,7 @@ def verify(repo_root: Path, manifest_path: Path) -> tuple[list[str], dict]:
         "changed_extension_files": [],
     }
 
-    _verify_skill_prefix(repo_root, manifest, errors)
+    _verify_skill_contract(repo_root, manifest, errors)
     _verify_required_paths(repo_root, manifest, errors)
     _verify_reason_coverage(manifest, errors)
 
@@ -214,12 +207,12 @@ def main() -> int:
     print("PRESERVATION / COMPATIBILITY CHECK: PASS")
     print(f"- baseline commit: {manifest['baseline_commit']}")
     print(f"- extension baseline commit: {manifest.get('extension_baseline_commit')}")
-    print(f"- protected SKILL prefix bytes: {manifest['legacy_skill_prefix']['bytes']}")
+    print(f"- reviewed SKILL contract bytes: {manifest['skill_contract']['bytes']}")
     if details["history_mode"]:
         print(f"- Git-history baseline files checked: {details['baseline_files']}")
         print("- reviewed baseline files changed: " + (", ".join(details["changed_baseline_files"]) or "none"))
     else:
-        print("- WARNING: legacy baseline Git history unavailable; only prefix/path checks were possible")
+        print("- Git anchor not configured/available; SKILL contract and required paths were checked")
     if details["extension_history_mode"]:
         print(f"- governed extension files existing at anchor: {details['extension_existing_files']}")
         print("- reviewed extension files changed: " + (", ".join(details["changed_extension_files"]) or "none"))

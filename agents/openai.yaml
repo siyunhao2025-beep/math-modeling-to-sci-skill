@@ -1,0 +1,4 @@
+interface:
+  display_name: "M²SCI Forge"
+  short_description: "把数学建模成果转化为证据可追溯、经得起审稿的 SCI 稿件"
+  default_prompt: "Use $math-modeling-to-sci to audit my modeling report first, then build the minimum evidence-backed path to an SCI manuscript."

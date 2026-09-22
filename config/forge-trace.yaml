@@ -1,0 +1,64 @@
+version: "2.0"
+framework: "FORGE"
+quality_rails: [traceability, rigor, argument, compliance, evidence]
+
+statuses:
+  not_ready: NOT_READY_FOR_CONVERSION
+  blocked: BLOCKED
+  author_action: AUTHOR_ACTION_REQUIRED
+  human_check: READY_FOR_HUMAN_SUBMISSION_CHECK
+
+phases:
+  F:
+    name: Fidelity
+    directory: 01-forensics
+    requires:
+      - 00-source/source-manifest.json
+      - 01-forensics/asset-inventory.json
+      - 01-forensics/disposition-ledger.json
+  O:
+    name: Opportunity
+    directory: 02-opportunity
+    requires:
+      - 02-opportunity/research-positioning.json
+      - 02-opportunity/model-profile.json
+  R:
+    name: Revalidation
+    directory: 03-revalidation
+    requires:
+      - 03-revalidation/validation-plan.json
+      - 03-revalidation/validation-results.json
+  G:
+    name: Grounding
+    directory: 04-manuscript
+    requires:
+      - 04-manuscript/claim-map.json
+      - 04-manuscript/figure-manifest.json
+      - 04-manuscript/citation-audit.json
+      - 04-manuscript/manuscript.*
+  E:
+    name: Editorial
+    directory: 05-editorial
+    requires:
+      - 05-editorial/journal-evidence.json
+      - 05-editorial/reviewer-panel.json
+      - 05-editorial/submission-preflight.json
+
+model_archetypes:
+  - optimization
+  - evaluation
+  - prediction
+  - classification-cv
+  - mechanism
+  - signal
+  - spatial-graph
+  - simulation
+
+hard_rules:
+  - no_fabricated_data_or_runs
+  - zero_silent_loss
+  - citation_identity_and_support_are_separate
+  - no_score_overrides_blocker
+  - figure_count_follows_claim_coverage
+  - current_official_journal_evidence_required
+  - acceptance_probability_prohibited

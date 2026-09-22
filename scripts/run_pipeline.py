@@ -225,7 +225,7 @@ def _interactive_confirm(message: str) -> bool:
 
 def _report_gate(result: dict) -> None:
     status = "PASS" if result.get("passed") else "FAIL"
-    print(f"[{result['gate']}] {status} — {result.get('name')}")
+    print(f"[{result['gate']}] {status} - {result.get('name')}")
     for item in result.get("error_failures", []):
         print(f"  ERROR {item['id']} {item['check']}: {item['detail']}")
     for item in result.get("warnings", []):
@@ -390,7 +390,7 @@ def main() -> int:
 
         while True:
             attempts += 1
-            print(f"\n[{stage}] {cfg.get('name', stage)} — attempt {attempts}")
+            print(f"\n[{stage}] {cfg.get('name', stage)} - attempt {attempts}")
 
             if stage == "S1":
                 ir_path = ingest.run(args.input, args.workdir)
@@ -540,15 +540,15 @@ def main() -> int:
         if args.mode != "dry-run":
             try:
                 report_path = report.run(args.workdir)
-                print(f"\n⛔ Pipeline blocked. Diagnostic report: {report_path}")
+                print(f"\n[BLOCKED] Pipeline blocked. Diagnostic report: {report_path}")
             except Exception as exc:
-                print(f"\n⛔ Pipeline blocked; partial report could not be generated: {exc}")
+                print(f"\n[BLOCKED] Pipeline blocked; partial report could not be generated: {exc}")
         else:
-            print(f"\n⛔ Dry-run blocked: {block_detail}")
+            print(f"\n[BLOCKED] Dry-run blocked: {block_detail}")
         return 2
 
     logger.log("run_end", "S0", result="success", detail="requested stage range finished")
-    print(f"\n✅ Requested pipeline range finished: {args.stage} → {stop_stage}")
+    print(f"\n[OK] Requested pipeline range finished: {args.stage} -> {stop_stage}")
     print(f"   workdir: {args.workdir}")
     if stop >= STAGES.index("S7"):
         print(f"   report: {os.path.join(args.workdir, 'conversion-report.md')}")

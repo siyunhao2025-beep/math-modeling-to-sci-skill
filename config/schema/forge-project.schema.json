@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/math-modeling-to-sci/forge-project.schema.json",
+  "title": "FORGE project manifest",
+  "type": "object",
+  "required": ["schema_version", "framework", "route", "created_at", "workspace", "phase_order"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "framework": {"const": "FORGE x TRACE"},
+    "route": {"enum": ["diagnose", "full", "revalidation", "journal", "revision"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "workspace": {"type": "string", "minLength": 1},
+    "phase_order": {"const": ["F", "O", "R", "G", "E"]},
+    "stale_from": {"type": ["string", "null"], "enum": ["F", "O", "R", "G", "E", null]}
+  },
+  "additionalProperties": true
+}

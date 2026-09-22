@@ -1,350 +1,157 @@
 ---
 name: math-modeling-to-sci
-description: 将数学建模结果文章（Word .docx 或 LaTeX .tex）转换为可投稿的 SCI 期刊论文。覆盖输入解析、学术化改写、质量评估打分、SCI 期刊匹配推荐、目标期刊模板适配、多轮格式与引用校验、最终成稿与转换报告输出。当用户提供数学建模报告、竞赛论文（如 MCM/ICM、全国大学生数学建模竞赛）、技术建模文档，并希望改写为学术论文、投稿 SCI、匹配期刊或套用期刊模板时使用本技能。
-license: MIT
-version: 1.0.0
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch
+description: 将已有数学建模报告、竞赛论文、技术建模文档或可复现实验工程转化为证据可追溯、方法经复核、面向真实期刊的 SCI 稿件。用于 Word/LaTeX/Markdown/项目文件的只读体检、体裁重构、研究问题与贡献重定位、模型再验证、引用双重核验、图表与论证链设计、期刊匹配、模板适配、模拟审稿、返修和投稿前检查。尤其适用于 MCM/ICM、国赛、华为杯等建模成果转论文；不用于凭空补实验、伪造引用、保证录用或把普通英文润色冒充研究升级。
 ---
 
-# Math Modeling → SCI Paper
+# Math Modeling to SCI · M²SCI Forge
 
-把一篇「数学建模报告」变成一篇「可投稿的 SCI 论文」，并附带质量评分、期刊推荐与可追溯的转换报告。
+> 不把建模报告翻译成英文；把模型证据锻造成经得起审稿的 SCI 论文。
 
-## 什么时候用这个技能
+## 先做判断，再做转换
 
-- 用户上传 `.docx` / `.tex` / `.zip`（LaTeX 工程）格式的建模报告，希望改成期刊论文
-- 用户问「这篇建模文章能投什么 SCI 期刊」
-- 用户需要把已有论文套用某个期刊的 LaTeX/Word 模板
-- 用户需要对论文做学术质量评估与改进建议
+先读取用户已有文件和工作区，不重复询问已知信息。默认从只读诊断开始；只有用户明确要求改稿时才修改正文。
 
-**不适用**：纯文献综述撰写、从零开始的研究选题、非建模类论文的润色（可以用，但收益有限）。
+先判断以下前提是否成立：
 
-## 核心设计原则（务必遵守）
+1. 已有材料包含真实模型、数据、结果或可复现代码，而不只是方案设想。
+2. 结果具有超出竞赛题解的研究问题、方法价值或可迁移发现。
+3. 关键结论能回链到数据、代码运行、图表、公式或已核验文献。
+4. 缺口可通过补分析、补验证或收窄主张解决，而非依赖虚构内容。
 
-1. **不臆造事实**。原文没有的数据、实验结果、数值不得凭空生成。缺失内容一律标记为
-   `[[MISSING: 说明]]` 并写入 `gaps` 列表交由作者补充，绝不用编造内容填空。
-2. **文献引用必须可验证**。所有新增参考文献必须通过 `WebSearch` / `WebFetch` 检索到真实
-   DOI 或权威来源；无法验证的引用标记为 `[[UNVERIFIED_REF]]`，不得写入最终 `.bib`。
-3. **数学内容零改动语义**。公式、符号、定义、定理只允许改排版（如 `$..$` → `\begin{equation}`），
-   不允许改变数学含义。变量重命名必须全文一致并记录进 `symbol_map`。
-4. **阶段间只通过结构化文件传递**。每阶段读取上游 JSON、写出自己的 JSON，
-   不依赖对话上下文记忆，保证可断点续跑。
-5. **质量门控不通过就不往下走**。见 `config/quality-gates.yaml`。
+若以上条件明显不成立，直接给出 `NOT_READY_FOR_CONVERSION`，列出最小补强清单。不要把语言润色包装成 SCI 升级。
 
-## 七阶段工作流
+## 使用 FORGE × TRACE 框架
 
-```
-S1 解析 → S2 学术化改写 → S3 质量评估 → S4 期刊匹配
-                              ↓ (gate)
-   S7 汇报 ← S6 多轮校验 ← S5 模板适配
-```
+先读 `references/forge-trace-framework.md`。按五个阶段推进：
 
-| 阶段 | 提示词 | 输入 | 输出 |
-|------|--------|------|------|
-| S1 输入解析 | `prompts/01-ingest-parse.md` | `.docx`/`.tex`/`.zip` | `manuscript.ir.json` |
-| S2 学术化改写 | `prompts/02-academic-rewrite.md` | `manuscript.ir.json` | `manuscript.rewritten.json` + `references.bib` |
-| S3 质量评估 | `prompts/03-quality-assessment.md` | `manuscript.rewritten.json` | `assessment.json` |
-| S4 期刊匹配 | `prompts/04-journal-matching.md` | `assessment.json` + IR | `journal-match.json` |
-| S5 模板适配 | `prompts/05-template-adaptation.md` | 上述全部 + 期刊模板 | `build/main.tex` 或 `build/main.docx` |
-| S6 多轮校验 | `prompts/06-multi-round-validation.md` | `build/` 产物 | `validation.json`（迭代直至 PASS） |
-| S7 结果汇报 | `prompts/07-final-report.md` | 全部工件 | `conversion-report.md` + 成稿 |
-
-编排规则见 `prompts/00-orchestrator.md`，这是**入口提示词**，先读它。
-
-## 快速开始
-
-```bash
-# 安装依赖
-pip install -r requirements.txt
-
-# 端到端跑一遍（自动模式）
-python scripts/run_pipeline.py \
-    --input examples/input/sample-model-report.tex \
-    --workdir runs/demo \
-    --mode auto
-
-# 只跑某个阶段（断点续跑）
-python scripts/run_pipeline.py --workdir runs/demo --stage S3
-
-# 查看某次运行的审计轨迹
-python scripts/run_pipeline.py --workdir runs/demo --show-audit
-```
-
-`--mode` 取值：
-- `auto`：全自动，遇到 gate 失败按 `config/quality-gates.yaml` 的策略自动重试/降级
-- `interactive`：每个 gate 处暂停，等作者确认（推荐首次使用）
-- `dry-run`：只跑校验与打分，不生成成稿
-
-## 工作目录布局
-
-一次运行的所有产物都在 `--workdir` 下，可完整复现：
-
-```
-runs/demo/
-├── 00-input/            # 输入文件快照（只读备份）
-├── 01-parse/            manuscript.ir.json, parse-warnings.json
-├── 02-rewrite/          manuscript.rewritten.json, references.bib, rewrite-diff.md
-├── 03-assess/           assessment.json
-├── 04-journals/         journal-match.json, journal-evidence/
-├── 05-template/         template/, build/main.tex, build/main.docx
-├── 06-validate/         validation-round-1.json ... validation-final.json
-├── 07-report/           conversion-report.md, manuscript-final.pdf
-└── audit.jsonl          全链路审计日志（append-only）
-```
-
-## 分阶段执行指引
-
-### S1 输入解析
-
-先判定格式，再调对应解析器：
-
-```bash
-python scripts/ingest/detect_format.py --input <file>          # → docx | latex | latex-project | unknown
-python scripts/ingest/parse_docx.py  --input <f> --out 01-parse/manuscript.ir.json
-python scripts/ingest/parse_latex.py --input <f> --out 01-parse/manuscript.ir.json
-python scripts/validate/validate_ir.py --ir 01-parse/manuscript.ir.json
-```
-
-解析器做的是**机械抽取**（章节树、公式、图表、引用、元数据）。语义判断（哪段是"研究动机"、
-哪段属于"方法"）由 `prompts/01-ingest-parse.md` 指导模型完成后回填 IR 的 `semantic_role` 字段。
-
-### S2 学术化改写
-
-按 `prompts/02-academic-rewrite.md` 执行。核心是三件事：
-1. **体裁转换**：竞赛报告体 → 期刊论文体（见 `references/math-modeling-to-paper-mapping.md` 的章节映射表）
-2. **补充学术骨架**：研究缺口（research gap）、文献综述、创新点声明、局限性与未来工作
-3. **语言规范化**：应用 `config/style-rules.yaml`（时态、语态、第一人称、模糊限定词、禁用词）
-
-新增文献必须走检索验证，写入 `references.bib` 前用 `scripts/validate/check_citations.py --verify-doi` 过一遍。
-
-### S3 质量评估
-
-按 `prompts/03-quality-assessment.md` 的六维度评分卡（创新性、方法论严谨性、实验完整性、
-学术表达、结构规范性、可复现性），每维 0–10 分并给加权总分。输出必须符合
-`config/schema/assessment.schema.json`。
-
-**Gate G3**：总分 < 阈值时不进入期刊匹配，先回 S2 按 `improvement_actions` 重写。
-
-### S4 期刊匹配
-
-```bash
-python scripts/journals/match_journals.py \
-    --assessment 03-assess/assessment.json \
-    --ir 02-rewrite/manuscript.rewritten.json \
-    --out 04-journals/journal-match.json
-```
-
-本地期刊库 `config/journals.yaml` 给出候选池与打分基线，**影响因子等时效数据必须用
-`WebSearch` 现场核实**（库里的值仅作 fallback，且必须在报告中标注数据年份与来源）。
-推荐 3–5 个，每个给匹配理由、IF、分区、审稿周期、Aims&Scope 契合点、拒稿风险。
-
-### S5 模板适配
-
-```bash
-python scripts/journals/fetch_template.py --journal "<name>" --out 05-template/template/
-python scripts/render/render_latex.py --ir <rewritten.json> --template 05-template/template/ --out 05-template/build/
-python scripts/render/render_docx.py  --ir <rewritten.json> --out 05-template/build/main.docx
-```
-
-模板获取失败时的三级降级策略见 `prompts/05-template-adaptation.md` 的「异常处理」节
-（官方站点 → 出版商通用模板 → `assets/templates/` 内置骨架），降级必须在报告中显式声明。
-
-### S6 多轮校验
-
-最多 `max_rounds` 轮（默认 4），每轮跑全套检查器，把 `severity=error` 的项修掉后重跑，
-直到 0 error 或达到轮次上限：
-
-```bash
-python scripts/validate/check_citations.py     --build 05-template/build/ --out 06-validate/cite.json
-python scripts/validate/check_figures_tables.py --build 05-template/build/ --out 06-validate/figtab.json
-python scripts/validate/check_equations.py      --build 05-template/build/ --out 06-validate/eq.json
-python scripts/validate/latex_compile_check.py  --build 05-template/build/ --out 06-validate/compile.json
-```
-
-**Gate G6 是硬门控**：残留 error 时禁止标记为「可投稿」，必须在报告首页列出阻塞项。
-
-### S7 结果汇报
-
-```bash
-python scripts/report/build_report.py --workdir runs/demo --out 07-report/conversion-report.md
-```
-
-报告必含：转换摘要、逐章修改记录、质量评分卡、期刊推荐表、校验结果、
-`[[MISSING]]` 待补清单、投稿前 checklist（`assets/checklists/submission-checklist.md`）。
-
-## 关键约束速查
-
-- 图表：原文位图无法矢量化时，不要静默降级，写入 `gaps` 提示作者提供源文件
-- 参考文献：`.bib` 的 key 统一 `firstauthorYEARfirstword` 格式，避免重复 key
-- 单位与量纲：统一 SI，混用时以原文首次出现为准并记录进 `symbol_map`
-- 中文残留：S6 会扫描 CJK 字符，成稿中出现即为 `error`
-- 任何降级、跳过、自动修复都必须写入 `audit.jsonl`，报告中如实呈现
-
-## 参考资料
-
-需要时按需读取，不必一次全读：
-
-- `references/sci-writing-conventions.md` — SCI 各章节写法与常见拒稿雷区
-- `references/math-modeling-to-paper-mapping.md` — 建模报告 → 论文的章节/内容映射表
-- `references/journal-database.md` — 期刊库字段说明与扩充方法
-- `references/troubleshooting.md` — 常见故障与恢复手册
-- `docs/architecture.md` — 数据流、状态机、质量门控完整说明
-
-
-<!-- ====================================================================== -->
-<!-- ADDITIVE SCI EXTENSION — appended 2026-08-19; legacy prefix is immutable -->
-<!-- ====================================================================== -->
-
-# Integrated SCI Writing Extension — 撰写 / 润色 / 投稿检索
-
-> **兼容性声明**：从文件开头到本扩展标记之前的全部内容是原始 v1.0.0 Skill，
-> 其 9,679-byte 前缀继续按字节保护。本扩展增加能力；后续为修复运行时/文档错误而修改的
-> 原有代码文件必须进入 `config/preservation-manifest.json` 的显式 bug-fix allowlist，并由
-> `python scripts/check_preservation.py` 对照 Git 基线检查。该机制是**兼容性回归保护**，
-> 不是防篡改或安全认证。
-
-新增模块先读取 `prompts/00-extension-router.md`，由它决定进入 W / P / J；它们是 Agent 模块，
-**不是** `scripts/run_pipeline.py` 中额外的 Python stage。若任务未经过 S1 形成 IR，不得声称
-G2/G6 或其他 IR 门控已经自动执行。
-
-## 扩展后的适用范围
-
-除原有“数学建模报告 → SCI 论文”七阶段流程外，本 Skill 现在还可独立处理：
-
-- **SCI 论文撰写**：研究逻辑、章节结构、论证链、结果—讨论组织；
-- **语言润色**：语法、句式、学术语体、topic–stress、科学语气强度；
-- **投稿与期刊检索**：期刊匹配、实时规范核验、投稿材料、格式 preflight、审稿回复。
-
-**范围优先级说明**：对于命中新模块的请求，本扩展仅覆盖上文
-“纯文献综述/从零研究规划/非建模类润色不适用”的旧范围限制；
-它**不覆盖**任何原有的反幻觉、引用验证、数学语义、质量门控或审计要求。
-
-## 模块路由
-
-| 用户任务 | 主模块 | 与原有流程关系 |
+| 阶段 | 目标 | 关键产物 |
 |---|---|---|
-| 数学建模报告转 SCI | `prompts/00-orchestrator.md` → S1–S7 | **完全沿用原流程** |
-| 从材料撰写 SCI 论文/章节 | `prompts/00-extension-router.md` → `prompts/08-sci-writing.md` | Agent 独立模块 |
-| 英文润色/深度学术润色 | `prompts/00-extension-router.md` → `prompts/09-language-polish.md` | Agent 独立模块 |
-| 找期刊/比期刊/投稿规范 | `prompts/00-extension-router.md` → `prompts/10-submission-journal-search.md` | Agent 独立模块 |
-| 混合任务 | router → W → P → J（按需） | 不虚构未执行的 runtime gate |
+| **F · Fidelity** | 冻结原始事实，建立可追溯底座 | source manifest、资产清单、处置账本、符号表 |
+| **O · Opportunity** | 把“解题任务”重构为可研究问题 | research positioning、贡献上限、模型画像 |
+| **R · Revalidation** | 按模型原型补齐期刊级证据 | validation plan、运行记录、稳健性与边界 |
+| **G · Grounding** | 把证据组织成论文论证链 | claim map、稿件、图表契约、引用双检 |
+| **E · Editorial** | 匹配真实期刊并通过投稿前审查 | journal evidence、评审面板、preflight |
 
-所有新增模块首先读取：
-`prompts/shared/05-integrity-preservation.md`。
+同时用 TRACE 五条横向质量轨检查每个阶段：
 
-## 新增不可协商约束：数学建模内容零损失
+- **T · Traceability**：主张、数字、公式、图表与来源可定位。
+- **R · Rigor**：设计、基线、公平比较、不确定性与稳健性充分。
+- **A · Argument**：问题—缺口—方法—证据—贡献链成立。
+- **C · Compliance**：期刊、伦理、披露、格式与材料要求有当前证据。
+- **E · Evidence**：证据强度不低于句子强度，缺失显式暴露。
 
-对数学建模文章，无论执行“撰写 / 润色 / 投稿检索”中的哪一个模块，都必须完整保留：
+分数只能辅助排序，不能覆盖硬阻塞项。任一关键主张无证据、引用矛盾、结果不可复现或期刊规范未核实时，不得输出“可投稿”。
 
-1. **所有图片**：图像对象、图号、图题、图注及其信息关系；
-2. **所有表格**：结构、表号、表题、表注、数据、单位；
-3. **所有公式**：公式内容、编号、符号、变量定义、约束与数学语义；
-4. **所有核心结论**；
-5. **所有关键论述与支撑链条**；
-6. **所有关键数值、误差、不确定度、单位、范围与条件**。
+## 选择最短有效路线
 
-不得以“更简洁”“更适合期刊”“减少篇幅”“提高可读性”为理由自行删改、精简或重写。
-如果期刊规范与保护内容冲突，标记 `[[JOURNAL_CONFLICT]]` 并交由作者决定。
+| 用户意图 | 路线 | 读取 |
+|---|---|---|
+| 不知道能否转 SCI / 先评估 | F → O | `references/conversion-playbook.md` |
+| 完整数模报告转 SCI | F → O → R → G → E | 本文件全部路由 |
+| 已有稿件，补严谨性与证据 | 从最早失效阶段回退 | `references/change-control.md` |
+| 只做模型验证与实验补强 | O → R | `references/model-validation-matrix.md` |
+| 只做引用、论证或图表审计 | G | `references/evidence-and-citation.md`、`references/figure-contract.md` |
+| 只找期刊或做投稿前检查 | E | `references/editorial-fit-and-preflight.md` |
+| 收到审稿意见 | 先做变更分级，再回退到 O/R/G/E | `references/change-control.md` |
 
-## 统一证据纪律
+如果用户只说“继续”，从现有工件推断下一合法阶段。只在真正需要作者裁决、缺关键证据或将发生不可逆外部动作时暂停。
 
-新增模块统一使用以下来源层级：
+## F · Fidelity：先冻结，再改写
 
-`SOURCE_CONFIRMED` → `USER_CONFIRMED` → `VERIFIED_EXTERNAL` →
-`INFERRED` / `SUGGESTED` → `MISSING`
+1. 对输入做只读快照并记录 SHA-256、文件类型、时间和来源。
+2. 机械提取章节、公式、符号、图、表、引用、关键数字、结论与附件。
+3. 建立资产处置账本。对每项标记 `retain`、`adapt`、`supplement`、`drop` 或 `pending`。
+4. 将“零损失”解释为**零静默损失**：原始信息必须可追溯，但无关竞赛内容不必强塞进期刊正文；删除或移入补充材料必须写明理由，实质性删除需作者确认。
+5. 冻结数学语义、数值、单位、边界条件和证据强度。变量改名必须进入 `symbol_map` 并全文同步。
 
-- 观测/数据事实与机制解释必须分开；
-- 推断不得伪装为观测；
-- 缺数据时保留 `[[MISSING]]`；
-- 新增文献必须可验证；
-- IF、分区、APC、收录、模板、投稿要求等时效信息必须在任务发生时重新检索并记录日期。
+优先复用现有 S1 解析器与 IR。若输入无法解析，先报告能力边界，不要凭肉眼读到的局部内容声称完整解析。
 
-## Module W：SCI 撰写
+## O · Opportunity：先证明值得写，再写
 
-读取 `prompts/08-sci-writing.md`。
+1. 把竞赛任务改写为一个主研究问题和最多三个子问题。
+2. 明确 `Problem → Gap → Approach → Evidence → Contribution → Boundary`。
+3. 把创新分成问题、方法、证据、应用四类；“使用了某算法”本身不算创新。
+4. 识别主模型原型与辅原型：optimization、evaluation、prediction、classification-cv、mechanism、signal、spatial-graph、simulation。
+5. 将原型匹配视为候选假设，不把关键词命中当作模型定论。
+6. 给出贡献上限：`demonstrated`、`supported`、`suggested` 或 `not_supported`。不得用更强措辞越过证据。
 
-核心流程：
-1. 建立 source ledger 与保护清单；
-2. 锁定 Research Question → Gap → Approach → Evidence → Contribution；
-3. 按章节 rhetorical moves 写作；
-4. Results 坚持 `Claim → Evidence → Quantification → Boundary`；
-5. Discussion 坚持“观察 → 解释 → 机制（必要时避险）→ 对比 → 替代解释/局限 → 意义”；
-6. 用 reviewer-perspective 五维自检，但不以总分掩盖缺失证据。
+若研究缺口只靠“尚未见报道”且没有系统检索证据，标为 `UNVERIFIED_GAP`；若问题只能复述题目答案，要求补外部有效性、一般化条件或方法比较。
 
-## Module P：语言润色
+## R · Revalidation：按原型补证据
 
-读取 `prompts/09-language-polish.md`。
+读取 `references/model-validation-matrix.md`，先建立最简可信基线，再决定是否保留复杂模型。
 
-核心流程：
-1. 确定 proofread / academic polish / structural polish；
-2. 冻结 LaTeX、公式、引用、数字、单位、图表引用和术语；
-3. 先做科学语义冻结，再做语言优化；
-4. 校准因果与 hedging；
-5. 优化 topic–stress、旧→新信息、强动词与句式节奏；
-6. 全文或 LaTeX 工程采用“保护 → 安全切分 → 润色 → 重组 → diff/一致性审计”。
+执行以下共通检查：
 
-## Module J：投稿与期刊检索
+1. 使用同一数据、预处理、划分、指标、随机种子/重复次数和计算预算做公平比较。
+2. 区分训练、验证与最终测试；按时间、空间、主体或分组结构防止泄漏。
+3. 分开处理观测、参数与情景不确定性。
+4. 将每个高风险主张链接到至少一项适配验证；核心创新或高风险因果/机制主张优先使用两类独立证据。
+5. 只有声称模块贡献时才做消融；不存在合理基线时改用理论界、精确解、小规模穷举、外部数据或独立实现互验。
+6. 保留失败运行、负结果和方案取舍。没有真实运行文件时只能写“计划验证”，不得写成结果。
 
-读取 `prompts/10-submission-journal-search.md`。
+用户请求“优化模型”时，先比较收益、稳定性、复杂度和解释成本。差异未超过不确定性或收益不足以覆盖成本时，推荐保留更简单的基线。
 
-核心流程：
-1. 建立 manuscript profile；
-2. 候选发现 + scope/article-type 硬过滤；
-3. 为每个候选建立实时证据卡；
-4. 用 scope / method / evidence / audience / format / practical / indexing 多因子评分；
-5. 推荐 3–5 个有梯度的真实候选，并写明风险；
-6. 锁定期刊后生成 Guide for Authors compliance matrix；
-7. 准备 Cover Letter、声明、Highlights/Graphical Abstract（仅在需要时）；
-8. preflight 后再投稿；
-9. 审稿阶段用 point-by-point、可定位的 response workflow。
+## G · Grounding：以主张为单位造论文
 
-## 开源调研与来源
+1. 先建 claim map，再写正文。每个核心主张记录位置、证据、条件、风险与状态。
+2. 按 `Claim → Evidence → Quantification → Boundary` 写 Results。
+3. 按“观察 → 解释 → 对比 → 替代解释/局限 → 意义”写 Discussion；机制证据不足时主动降级因果措辞。
+4. 将 Methods 与代码位置、配置、数据版本和运行记录对应。
+5. 对引用做两道独立检查：
+   - 身份核验：文献是否真实、元数据是否准确、版本是否规范；
+   - 支持核验：文献是否在相同对象、范围、条件和证据层级下支持当前句子。
+6. 按句子强度确定最低访问深度。定量与因果句必须读到全文并给页/图/表定位；只有摘要时收窄句子或标 `CANNOT_VERIFY`。
+7. 按 claim coverage 规划图表。每张图回答一个科学问题，并具有 source data → script → output → caption → claim 的链路。不要按历史均值或用户期待硬凑数量。
+8. 润色时冻结 LaTeX、公式、数字、单位、引用键、图表引用和术语。去 AI 味不得改变证据强度。
 
-完整候选仓库、star 快照、许可证判断、可复用能力和整合决策见：
+## E · Editorial：用当前证据做期刊决策
 
-`references/open-source-skill-survey.md`
+1. 先做 manuscript profile，再发现候选期刊。
+2. 使用官方 Aims & Scope、article type、Guide for Authors 与近期论文做硬过滤和语义判断。
+3. 对 IF、分区、APC、收录、模板、字数、数据/代码政策等时效信息实时核验，记录 URL 与检索日期。
+4. 提供有梯度的 3–5 个候选，并分别写契合点、desk-reject 风险、证据缺口和作者成本；不要给录用概率。
+5. 让 3–5 个不同角色独立评审，不把分数平均成一个漂亮总分。分歧本身进入作者决策。
+6. 汇总确定性检查与语义检查。最强正面状态只能是 `READY_FOR_HUMAN_SUBMISSION_CHECK`。
 
-整合遵循：
-- MIT 来源：只做通用化重实现，并在调研文档归因；
-- GPL / 未声明许可 / 许可不明确来源：**只借鉴工作流思想，不复制代码、模板或大段 prompt**；
-- 本仓库仍按原 MIT License 发布。
+投稿、付费、上传、发送邮件或对外共享文件需要用户明确授权。
 
-## 完整性验证
+## 不可协商的证据纪律
 
-更新后可执行：
+- 不编造数据、样本量、运行、显著性、伦理编号、引用、期刊指标或审稿结果。
+- 不把 DOI 可解析等同于“该文支持这句话”。
+- 不把相关写成因果，不把模拟写成观测，不把计划写成已完成。
+- 不把脚本 schema PASS 写成科学有效性 PASS。
+- 不静默删除原文资产，不静默降低门槛，不静默改变结果。
+- 不承诺录用，不预测录用概率，不声称规避 AI 检测。
+- 将无法验证的内容标为 `待确认`，同时写清已查内容、阻塞原因和下一步。
 
-```bash
-python scripts/check_docs.py
-python scripts/check_preservation.py
-pytest -q
-```
+## 状态与交付
 
-检查含义：
-- 原始 `SKILL.md` 的 9,679-byte 前缀必须保持字节级一致；
-- 有 Git 历史时，从 v1.0.0 基线枚举全部原有文件，禁止删除，任何修改必须进入显式 bug-fix allowlist；
-- 无 Git 历史时只做前缀与关键路径的降级检查，并明确提示验证范围受限；
-- `check_docs.py` 同时检查配置/文档声明的关键脚本、示例、workflow 与资源路径是否真实存在。
+只使用以下顶层状态：
 
-这套机制用于发现兼容性回归与文档漂移；它**不**构成密码学防篡改证明。真正的论文科学内容保护还要依赖 IR/source ledger、G2/G6 和 `shared/05-integrity-preservation.md`。
+- `NOT_READY_FOR_CONVERSION`：研究基础不足，需先补模型/数据/验证。
+- `BLOCKED`：存在不可绕过的证据、复现、引用或合规阻塞。
+- `AUTHOR_ACTION_REQUIRED`：自动与代理工作已完成到作者决策点。
+- `READY_FOR_HUMAN_SUBMISSION_CHECK`：可进入作者/导师的最终投稿复核，不代表录用。
 
-<!--
-USER GUIDANCE HOOK — INTERNAL COMMENT
+每轮结束报告：已实现、已测试、语义人工复核待办、外部实时核验待办、阻塞项和唯一推荐下一步。不要把“文件已生成”“已解析”或“单元测试通过”说成研究结论已验证。
 
-When this Skill is active, read `prompts/shared/06-user-guidance-playbook.md` whenever ANY of the following is true:
-- the user has just uploaded a Word/LaTeX/LaTeX-project file and does not provide a precise task;
-- the user says they do not know how to ask, asks “下一步怎么做/怎么提问”, or gives only “继续/下一步/按你建议来”;
-- a stage has just finished and the user would benefit from a concrete next-step prompt;
-- the user asks for the whole workflow but does not know the S1–S8 terminology.
+## 工具与兼容层
 
-Mandatory UX behavior:
-1. Do not require a novice user to understand S1–S8 or write a technical prompt before the Skill can start.
-2. For an ambiguous fresh upload, default to read-only intake/diagnosis before changing the manuscript.
-3. After each stage, give ONE recommended next action and a directly copyable Chinese prompt from the guidance playbook.
-4. If the user replies only “继续/下一步”, infer the next valid stage from completed artifacts and proceed.
-5. If the user chooses “完整流程/全自动”, continue automatically until a true author decision, missing evidence, verification blocker, or journal choice requires input.
-6. If S8 Publication Readiness is requested, guide the user through reference reality + citation support, deep journal fit, Claim–Evidence Audit, figure/table scientific audit, methods/statistics/ethics, Reviewer Simulator/rebuttal, and final Submission Preflight.
-7. Never turn guidance language into a false claim that a check actually ran. The strongest positive submission-facing label remains `READY_FOR_HUMAN_SUBMISSION_CHECK`, never an acceptance guarantee.
+- 用 `python scripts/forge.py init|status|gate|impact` 管理 FORGE 工件与变更传播。
+- 用 `python scripts/run_pipeline.py` 运行原有 S1–S7 兼容流水线。
+- 用 `python scripts/readiness/run_readiness.py` 运行投稿就绪兼容检查。
+- 需要旧阶段细节时读取 `prompts/00-orchestrator.md` 与 `references/legacy-stage-map.md`，不要同时加载全部旧提示词。
 
-The complete copyable prompts for intake, S1–S7, S8 submodules, W/P/J, read-only review and full-auto mode are maintained in `prompts/shared/06-user-guidance-playbook.md`.
-END USER GUIDANCE HOOK
--->
+## 按需读取
+
+- 框架、阶段门与目录：`references/forge-trace-framework.md`
+- 体裁转换与研究重定位：`references/conversion-playbook.md`
+- 八类模型再验证：`references/model-validation-matrix.md`
+- 引用双检与证据等级：`references/evidence-and-citation.md`
+- 图表契约：`references/figure-contract.md`
+- 变更传播与回退：`references/change-control.md`
+- 期刊匹配与投稿前检查：`references/editorial-fit-and-preflight.md`
+- 旧 S1–S8 映射：`references/legacy-stage-map.md`
+- 来源、许可与融合边界：`references/provenance.md`
