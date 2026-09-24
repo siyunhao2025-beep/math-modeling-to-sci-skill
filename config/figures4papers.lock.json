@@ -34,10 +34,29 @@
     ]
   },
   "integration_policy": {
-    "mode": "independent knowledge abstraction only",
+    "mode": "independent profile plus separately licensed vendored documentation skill",
     "bundled_upstream_code": false,
     "bundled_upstream_images": false,
     "bundled_upstream_pdfs": false,
-    "bundled_upstream_long_form_text": false
+    "bundled_upstream_long_form_text": true,
+    "vendored_skill": {
+      "path": "skills/scientific-figure-making",
+      "upstream_path": "scientific-figure-making",
+      "license": "CC-BY-NC-4.0",
+      "relicensed_under_root_mit": false,
+      "upstream_files": [
+        "scientific-figure-making/SKILL.md",
+        "scientific-figure-making/references/api.md",
+        "scientific-figure-making/references/common-patterns.md",
+        "scientific-figure-making/references/demos.md",
+        "scientific-figure-making/references/design-theory.md",
+        "scientific-figure-making/references/tutorials.md"
+      ],
+      "local_files": [
+        "skills/scientific-figure-making/LICENSE",
+        "skills/scientific-figure-making/SOURCE.md",
+        "skills/scientific-figure-making/agents/openai.yaml"
+      ]
+    }
   }
 }
