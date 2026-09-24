@@ -155,3 +155,7 @@ description: 将已有数学建模报告、竞赛论文、技术建模文档或�
 - 期刊匹配与投稿前检查：`references/editorial-fit-and-preflight.md`
 - 旧 S1–S8 映射：`references/legacy-stage-map.md`
 - 来源、许可与融合边界：`references/provenance.md`
+
+## figures4papers 参考路由
+
+设计或审计论文图表时，按需读取 `references/figures4papers-profile.md`：只独立实现其中标为 `ADAPT` 的通用原则，默认排除 `REJECT`，对 `REFERENCE-ONLY` 不复制上游代码、图片、数据、PDF、版式或长文。锁定来源与非商业许可边界见 `config/figures4papers.lock.json`。
