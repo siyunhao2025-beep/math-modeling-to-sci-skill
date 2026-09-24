@@ -149,6 +149,7 @@ references/model-validation-*  八类模型验证菜单
 scripts/forge.py                工作区、阶段门与变更传播
 scripts/run_pipeline.py         S1–S7 兼容运行时
 scripts/readiness/              投稿就绪兼容检查
+skills/scientific-figure-making/ 独立触发的出版绘图 Skill（CC BY-NC 4.0）
 config/forge-trace.yaml         框架与硬规则
 tests/                           确定性回归测试
 assets/brand/                    品牌主视觉
@@ -170,4 +171,4 @@ python scripts/forge.py --help
 
 ## License
 
-本仓库原创代码与文本采用 MIT License。第三方模板、语料和资产保留各自许可；不要把未授权论文全文或付费模板打包进本 skill。
+本仓库原创代码与文本采用 MIT License。第三方模板、语料和资产保留各自许可；不要把未授权论文全文或付费模板打包进本 skill。`skills/scientific-figure-making/` 是单独安装的 CC BY-NC 4.0 Skill 子树，不受根 MIT 重新许可；详见其 [`SOURCE.md`](skills/scientific-figure-making/SOURCE.md) 与 [`LICENSE`](skills/scientific-figure-making/LICENSE)。

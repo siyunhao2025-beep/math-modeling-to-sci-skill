@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "source": "ChenLiu-1996/figures4papers",
+  "source_url": "https://github.com/ChenLiu-1996/figures4papers",
+  "commit": "3c181f85e82c6f24948fcaaf3be6696102b41d8d",
+  "locked_tree_url": "https://github.com/ChenLiu-1996/figures4papers/tree/3c181f85e82c6f24948fcaaf3be6696102b41d8d",
+  "reviewed_on": "2026-09-24",
+  "inventory": {
+    "files_total": 76,
+    "python": 25,
+    "png": 39,
+    "pdf": 3,
+    "markdown": 7
+  },
+  "license": {
+    "name": "Creative Commons Attribution-NonCommercial 4.0 International",
+    "spdx_id": "CC-BY-NC-4.0",
+    "commercial_reuse": "requires separate permission",
+    "source_url": "https://github.com/ChenLiu-1996/figures4papers/blob/3c181f85e82c6f24948fcaaf3be6696102b41d8d/LICENSE"
+  },
+  "review_scope": {
+    "mode": "complete repository tree at the locked commit",
+    "included": [
+      "repository README and nested Markdown guidance",
+      "all Python plotting scripts",
+      "all rendered PNG examples",
+      "all PDF examples",
+      "license and repository metadata"
+    ],
+    "excluded": [
+      "Git history outside the locked snapshot",
+      "external linked content",
+      "independent clearance of publisher, coauthor, dataset, font, or other third-party rights"
+    ]
+  },
+  "integration_policy": {
+    "mode": "independent profile plus separately licensed vendored documentation skill",
+    "bundled_upstream_code": false,
+    "bundled_upstream_images": false,
+    "bundled_upstream_pdfs": false,
+    "bundled_upstream_long_form_text": true,
+    "vendored_skill": {
+      "path": "skills/scientific-figure-making",
+      "upstream_path": "scientific-figure-making",
+      "license": "CC-BY-NC-4.0",
+      "relicensed_under_root_mit": false,
+      "upstream_files": [
+        "scientific-figure-making/SKILL.md",
+        "scientific-figure-making/references/api.md",
+        "scientific-figure-making/references/common-patterns.md",
+        "scientific-figure-making/references/demos.md",
+        "scientific-figure-making/references/design-theory.md",
+        "scientific-figure-making/references/tutorials.md"
+      ],
+      "local_files": [
+        "skills/scientific-figure-making/LICENSE",
+        "skills/scientific-figure-making/SOURCE.md",
+        "skills/scientific-figure-making/agents/openai.yaml"
+      ]
+    }
+  }
+}

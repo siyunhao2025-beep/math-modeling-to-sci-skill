@@ -28,3 +28,11 @@
 - 采用“零静默损失”取代“所有内容必须进入正文”。
 
 复用或改写上游代码/文本时保留 MIT 许可与本文件归因。不要将第三方论文语料、付费全文或未授权模板打包进本 skill。
+
+## figures4papers 非商业参考源
+
+2026-09-24 完整审计 `ChenLiu-1996/figures4papers` 的锁定提交 `3c181f85e82c6f24948fcaaf3be6696102b41d8d`。上游声明 CC BY-NC 4.0，而非 MIT；来源、许可链接、文件计数与审计范围固定在 `config/figures4papers.lock.json`。
+
+本仓库的主流程只吸收独立表述的 `references/figures4papers-profile.md`，不包含上游代码、图片、PDF、论文数据或像素级版式。另按用户要求把真实 `scientific-figure-making` 文档 Skill 安装在 `skills/scientific-figure-making/`：完整保留上游主 SKILL 与五份引用，加入本仓证据优先级、安全修订、锁定链接、完整 CC BY-NC 4.0 文本和改动说明；没有引入上游绘图脚本、图像、PDF 或论文数据。
+
+该 vendored Skill 子树继续受 CC BY-NC 4.0 约束，**不被仓库根 MIT License 重新许可**。其来源、上游文件哈希、改动说明和第三方权利边界见 `skills/scientific-figure-making/SOURCE.md`。精确资产与具体视觉配方仍保持 `REFERENCE-ONLY`；商业使用或精确复刻须另行取得许可，并核验可能存在的出版方、共同作者、数据、字体等第三方权利。
