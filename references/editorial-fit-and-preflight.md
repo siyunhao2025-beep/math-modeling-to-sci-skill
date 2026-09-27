@@ -20,6 +20,36 @@
 
 本地期刊库只能生成候选，不得作为当前指标和规则的最终来源。
 
+### 2.1 身份、来源类别与刷新状态
+
+先解析期刊身份，再做匹配。优先键为校验通过的 ISSN/eISSN；若刊名相同、期刊更名、
+印刷版/电子版映射或出版社归属仍有歧义，状态为 `UNRESOLVED`，不得静默合并候选。
+
+把证据分成两类：
+
+- `official_requirement`：当前 Aims & Scope、article type、作者指南、模板、费用、
+  收录状态、投稿入口和披露政策；
+- `observed_pattern`：近期已发表论文呈现出的主题、方法、篇幅和版式惯例。
+
+后者能补充软匹配，不能替代前者通过硬过滤。每份官方证据记录 URL、带时区的
+`checked_at` 与项目显式设置的 `max_evidence_age_days`，再标为
+`CURRENT / STALE / UNVERIFIED`。刷新天数只是工作流的保守操作阈值，不是关于期刊政策
+稳定性的科学断言；超过阈值、缺时间、无时区或未来时间均阻断投稿就绪结论。
+
+可执行基线：
+
+```bash
+python scripts/readiness/journal_fit.py \
+  --manuscript manuscript.md --journal-name "Target Journal" --issn 1234-5679 \
+  --aims-scope-file journal-evidence/scope.txt --scope-source-url https://publisher.example/scope \
+  --article-types-file journal-evidence/article-types.txt --article-type "Research Article" \
+  --article-type-source-url https://publisher.example/guide \
+  --evidence-checked-at 2026-09-28T09:00:00+08:00 --max-evidence-age-days 30 \
+  --out journal-evidence/fit.json
+```
+
+示例中的 30 天不是通用建议；每个项目应依据投稿临近程度和规则变动风险自行设定。
+
 ## 3. 推荐方式
 
 给 3–5 个有梯度候选：
@@ -57,6 +87,7 @@
 - 题名、摘要、正文、图表和结论数字一致；
 - 引用身份与句子支持无 blocker；
 - 目标期刊和 article type 已由官方来源确认；
+- 期刊身份已解析，影响硬过滤的官方事实处于 `CURRENT`，且未以近期论文样本替代官方规则；
 - 模板来源和编译结果已验证；
 - 匿名、作者信息、利益冲突、基金、伦理、知情同意、数据/代码可用性与 AI 披露按需存在；
 - 图表格式、分辨率、色彩和版权符合指南；
