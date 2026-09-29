@@ -50,6 +50,74 @@ python scripts/readiness/journal_fit.py \
 
 示例中的 30 天不是通用建议；每个项目应依据投稿临近程度和规则变动风险自行设定。
 
+### 2.2 可选：目标期刊写作模式蒸馏
+
+期刊匹配回答“研究是否适合该刊”，写作模式蒸馏只回答“同刊同体裁论文通常怎样组织和呈现”。
+二者不得合并计分。蒸馏档案属于 `observed_pattern`，不能覆盖 `official_requirement`，也不能作为
+录用概率、科学质量或投稿就绪的证据。
+
+仅在作者合法取得全文并明确需要目标期刊适配时执行：
+
+1. 语料限定为同一 ISSN 与 article type；每篇记录 DOI、来源 URL、访问依据、文件 SHA-256、
+   `metadata_verified`、`full_text_read` 与 `visual_checked`。
+2. 提炼前按作者组划分 `train / heldout`；同一团队或同文不同版本不得跨组。
+3. 训练卡只记录自己归纳的结构/修辞定义和页、节、段定位，不保存原句、摘要、摘录、全文、
+   论文结论或数字。付费或机构访问只赋予阅读权限时，`redistribution_allowed` 必须如实为 `false`。
+4. 相同 `pattern_id` 的定义发生冲突时停止，不静默合并；规则支持度按不同论文和不同作者组统计。
+5. 最小训练篇数、作者组数与规则支持组数由项目显式设定。它们是工程取样策略，不是期刊规范，
+   也不是“样本充分”的科学证明。
+6. 首次编译只能得到 `DRAFT_NEEDS_HELDOUT_EVALUATION`。只有留出作者组评测与人工确认绑定到
+   当前 profile fingerprint 后，才能得到 `USABLE_WITH_RECORDED_HUMAN_APPROVAL`。
+
+输入 JSON 的核心结构为：
+
+```json
+{
+  "schema_version": "1.0",
+  "journal": {"name": "Target Journal", "issn": "1234-5679"},
+  "article_type": "Research Article",
+  "papers": [{
+    "id": "paper-a",
+    "doi": "10.xxxx/example",
+    "source_url": "https://publisher.example/article",
+    "access_basis": "open_access",
+    "redistribution_allowed": false,
+    "file_sha256": "<64 lowercase hex characters>",
+    "author_group": "team-a",
+    "split": "train",
+    "metadata_verified": true,
+    "full_text_read": true,
+    "visual_checked": true,
+    "observations": [{
+      "pattern_id": "validation-before-interpretation",
+      "dimension": "validation_reporting",
+      "definition": "Report the validation result before interpreting its implication.",
+      "locator": "p. 4, Results, paragraph 2"
+    }]
+  }]
+}
+```
+
+可执行编译器：
+
+```bash
+python scripts/readiness/journal_style_profile.py \
+  --cards journal-evidence/style-cards.json \
+  --min-train-papers <project-minimum> \
+  --min-train-author-groups <project-minimum> \
+  --min-pattern-author-groups <project-minimum> \
+  --out 08-readiness/journal-style-profile.json
+```
+
+未提供合格留出评测时命令退出码为 2，这是诚实阻断而不是执行故障。根据首次输出的
+`profile_fingerprint` 制作评测 JSON，再用 `--evaluation` 重跑。评测必须覆盖精确的 `heldout_ids`，
+并分别确认科学内容、数字/单位/公式、引用、结构效果和无原句模仿；编译器只验证这些声明的结构，
+不能证明人工判断本身正确。
+
+修订时只加载通过评测的 profile，不加载源论文语料。它只可影响问题引入、模型说明、验证报告、
+结果解释、局限和文章结构；事实、数据、公式、引用、证据强度、模型输出与主张上限继续受
+FORGE × TRACE 和变更控制约束。若风格要求与科学完整性冲突，保留科学内容并交作者处理。
+
 ## 3. 推荐方式
 
 给 3–5 个有梯度候选：
