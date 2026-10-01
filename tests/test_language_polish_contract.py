@@ -27,3 +27,20 @@ def test_quality_assessment_does_not_enforce_a_universal_sentence_quota():
     assert "无超 40 词" not in text
     assert "主语、比较项、条件和指代" in text
     assert "目标期刊" in text
+
+
+def test_reader_clarity_contract_keeps_reasoning_and_scientific_register():
+    text = PROMPT.read_text(encoding="utf-8")
+    for requirement in (
+        "完整句子",
+        "主体—动作—对象",
+        "比较对象",
+        "适用条件",
+        "必要的中间步骤",
+        "逐词直译",
+        "自造缩写",
+        "信息充分之后再精简",
+    ):
+        assert requirement in text
+    assert "目标期刊或学科语体" in text
+    assert "通俗化不得替换已锁定的专业术语" in text
