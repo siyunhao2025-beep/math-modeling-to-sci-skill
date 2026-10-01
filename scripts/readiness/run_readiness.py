@@ -8,6 +8,7 @@ it through the standard journal-evidence files or optional CLI overrides.
 Semantic citation support, visual scientific judgment and Reviewer Simulator
 remain explicit Agent tasks, so preflight stays conservative until they exist.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,6 +37,14 @@ def main() -> int:
     ap.add_argument("--article-types-file")
     ap.add_argument("--article-type")
     ap.add_argument("--article-type-source-url")
+    ap.add_argument(
+        "--evidence-checked-at", help="timezone-aware ISO-8601 official-page check time"
+    )
+    ap.add_argument(
+        "--max-evidence-age-days",
+        type=int,
+        help="project-defined journal-evidence refresh limit; not a scientific threshold",
+    )
     ap.add_argument("--build-tex")
     ap.add_argument("--source-root")
 
@@ -59,6 +68,8 @@ def main() -> int:
             "article_types_file": args.article_types_file,
             "article_type": args.article_type,
             "article_type_source_url": args.article_type_source_url,
+            "evidence_checked_at": args.evidence_checked_at,
+            "max_evidence_age_days": args.max_evidence_age_days,
             "build_tex": args.build_tex,
             "source_root": args.source_root,
         }.items()
