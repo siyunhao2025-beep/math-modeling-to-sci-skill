@@ -6,6 +6,11 @@ Turn vague “methodological rigor” into explicit, field-appropriate checks an
 
 Run `scripts/readiness/compliance_audit.py` first. Treat its output as a pre-screen, not certification.
 
+For every number in the frozen Abstract/Results/Table/Figure scope, run
+`scripts/readiness/result_trace.py` against a value ledger before release. Preserve `MISMATCH` and
+`UNVERIFIABLE` outcomes; do not repair them by widening a comparison rule after seeing the result.
+The audit validates declared bindings only—it does not rerun code, infer units, or certify the model.
+
 ## A. Reporting guideline selection
 
 Based on the actual study design, identify relevant guideline families such as:
