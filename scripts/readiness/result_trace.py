@@ -7,6 +7,7 @@ units, or decide whether a model or scientific claim is correct.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
@@ -20,6 +21,14 @@ from readiness.utils import load_json, save_json  # noqa: E402
 
 SHA256_RE = re.compile(r"[a-f0-9]{64}$")
 CLASSIFICATIONS = {"MATCH", "MISMATCH", "UNVERIFIABLE"}
+LOCK_BASES = {"version_control_commit", "external_registration", "immutable_record"}
+RUN_PURPOSES = {"SCIENTIFIC_EVIDENCE", "PIPELINE_SMOKE", "RESOURCE_CALIBRATION"}
+CLAIM_ROLES = {"scientific_result", "pipeline_function", "resource_cost"}
+ROLE_PURPOSES = {
+    "scientific_result": {"SCIENTIFIC_EVIDENCE"},
+    "pipeline_function": {"SCIENTIFIC_EVIDENCE", "PIPELINE_SMOKE"},
+    "resource_cost": {"SCIENTIFIC_EVIDENCE", "RESOURCE_CALIBRATION"},
+}
 PREDICATES = {
     "<": lambda value, threshold: value < threshold,
     "<=": lambda value, threshold: value <= threshold,
@@ -35,6 +44,34 @@ def _text(value: Any) -> bool:
 
 def _sha256(value: Any) -> bool:
     return isinstance(value, str) and SHA256_RE.fullmatch(value) is not None
+
+
+def _timestamp(value: Any, field: str, errors: list[str]) -> datetime | None:
+    if not _text(value):
+        errors.append(f"{field} must be a timezone-aware ISO-8601 timestamp")
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        errors.append(f"{field} must be a timezone-aware ISO-8601 timestamp")
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        errors.append(f"{field} must be timezone-aware")
+        return None
+    return parsed
+
+
+def _lock_time(value: Any, field: str, errors: list[str]) -> datetime | None:
+    if not isinstance(value, dict):
+        errors.append(f"{field} must be an object")
+        return None
+    if value.get("basis") not in LOCK_BASES:
+        errors.append(f"{field}.basis must be one of {sorted(LOCK_BASES)}")
+    if not _text(value.get("locator")):
+        errors.append(f"{field}.locator must identify the immutable record")
+    if not _sha256(value.get("sha256")):
+        errors.append(f"{field}.sha256 must be a lowercase SHA-256")
+    return _timestamp(value.get("recorded_at"), f"{field}.recorded_at", errors)
 
 
 def _decimal(value: Any, field: str, errors: list[str]) -> Decimal | None:
@@ -60,8 +97,9 @@ def _invalid_result(message: str) -> dict:
         "scope": "declared_manuscript_values_to_recorded_runs",
         "scientific_correctness_implied": False,
         "important_limit": (
-            "This audit checks a declared trace contract; it neither reruns the "
-            "analysis nor establishes model validity or scientific correctness."
+            "This audit checks declared lock metadata, timing, roles, and trace logic; "
+            "it does not retrieve an external lock record, rerun the analysis, or "
+            "establish model validity or scientific correctness."
         ),
     }
 
@@ -73,8 +111,8 @@ def audit_ledger(payload: Any) -> dict:
 
     errors: list[str] = []
     counts = {"MATCH": 0, "MISMATCH": 0, "UNVERIFIABLE": 0}
-    if payload.get("schema_version") != "1.0":
-        errors.append("schema_version must be 1.0")
+    if payload.get("schema_version") != "1.1":
+        errors.append("schema_version must be 1.1")
 
     inventory = payload.get("inventory")
     if not isinstance(inventory, dict):
@@ -91,9 +129,11 @@ def audit_ledger(payload: Any) -> dict:
         errors.append("inventory.complete_for_scope must be true")
     if inventory.get("frozen_before_execution") is not True:
         errors.append("inventory.frozen_before_execution must be true")
+    inventory_lock_at = _lock_time(inventory.get("lock"), "inventory.lock", errors)
 
     runs = payload.get("runs")
     run_index: dict[str, dict] = {}
+    run_times: dict[str, tuple[datetime | None, datetime | None]] = {}
     if not isinstance(runs, list) or not runs:
         errors.append("runs must be a non-empty array")
         runs = []
@@ -112,6 +152,13 @@ def audit_ledger(payload: Any) -> dict:
         run_index[run_id] = run
         if run.get("status") != "COMPLETED":
             errors.append(f"run {run_id} status must be COMPLETED")
+        if run.get("purpose") not in RUN_PURPOSES:
+            errors.append(f"run {run_id} purpose must be one of {sorted(RUN_PURPOSES)}")
+        started_at = _timestamp(run.get("started_at"), f"run {run_id} started_at", errors)
+        completed_at = _timestamp(run.get("completed_at"), f"run {run_id} completed_at", errors)
+        run_times[run_id] = (started_at, completed_at)
+        if started_at is not None and completed_at is not None and completed_at < started_at:
+            errors.append(f"run {run_id} completed_at must not precede started_at")
         for field in ("command", "environment"):
             if not _text(run.get(field)):
                 errors.append(f"run {run_id} needs a non-empty {field}")
@@ -134,6 +181,11 @@ def audit_ledger(payload: Any) -> dict:
         elif run["deterministic"] is False and run.get("seed") is None:
             errors.append(f"run {run_id} needs a recorded seed when deterministic is false")
 
+    if inventory_lock_at is not None:
+        for run_id, (started_at, _) in run_times.items():
+            if started_at is not None and inventory_lock_at >= started_at:
+                errors.append(f"inventory.lock.recorded_at must predate run {run_id} started_at")
+
     values = payload.get("values")
     if not isinstance(values, list) or not values:
         errors.append("values must be a non-empty array")
@@ -154,6 +206,9 @@ def audit_ledger(payload: Any) -> dict:
         for field in ("claim_id", "location", "reported_text", "reported_unit"):
             if not _text(value.get(field)):
                 errors.append(f"value {value_id} needs a non-empty {field}")
+        claim_role = value.get("claim_role")
+        if claim_role not in CLAIM_ROLES:
+            errors.append(f"value {value_id} claim_role must be one of {sorted(CLAIM_ROLES)}")
 
         classification = value.get("classification")
         if classification not in CLASSIFICATIONS:
@@ -170,12 +225,30 @@ def audit_ledger(payload: Any) -> dict:
         run_id = value.get("run_id")
         if run_id not in run_index:
             errors.append(f"value {value_id} references an unknown run_id")
+        elif claim_role in ROLE_PURPOSES:
+            run_purpose = run_index[run_id].get("purpose")
+            if run_purpose not in ROLE_PURPOSES[claim_role]:
+                errors.append(
+                    f"value {value_id} claim_role {claim_role} cannot be backed by "
+                    f"run purpose {run_purpose}"
+                )
         comparison = value.get("comparison")
         if not isinstance(comparison, dict):
             errors.append(f"value {value_id} needs a comparison object")
             continue
         if comparison.get("rule_frozen_before_execution") is not True:
             errors.append(f"value {value_id} comparison rule was not frozen before execution")
+        rule_lock_at = _lock_time(
+            comparison.get("rule_lock"),
+            f"value {value_id} comparison.rule_lock",
+            errors,
+        )
+        started_at = run_times.get(run_id, (None, None))[0]
+        if rule_lock_at is not None and started_at is not None and rule_lock_at >= started_at:
+            errors.append(
+                f"value {value_id} comparison.rule_lock.recorded_at must predate "
+                f"run {run_id} started_at"
+            )
         computed = _decimal(
             comparison.get("computed_in_reported_unit"),
             f"value {value_id} comparison.computed_in_reported_unit",
@@ -236,8 +309,9 @@ def audit_ledger(payload: Any) -> dict:
         "scope": "declared_manuscript_values_to_recorded_runs",
         "scientific_correctness_implied": False,
         "important_limit": (
-            "This audit checks a declared trace contract; it neither reruns the "
-            "analysis nor establishes model validity or scientific correctness."
+            "This audit checks declared lock metadata, timing, roles, and trace logic; "
+            "it does not retrieve an external lock record, rerun the analysis, or "
+            "establish model validity or scientific correctness."
         ),
     }
 

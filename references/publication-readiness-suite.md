@@ -9,7 +9,7 @@ This suite addresses preventable submission failures that remain after ordinary 
 - **Deep Journal Fit**: current official Aims & Scope, current article type, recent 12-month journal-content baseline, semantic fit review, desk-reject risk list.
 - **Reviewer Simulator**: handling editor + domain + methods/statistics + skeptical reviewer; 3–5 substantive comments, up to 3 revision/rebuttal rounds.
 - **Claim–Evidence Audit**: key claims mapped to source data/figures/tables/equations/statistics/verified citations; unsupported high-risk claims block release.
-- **Result-to-Run Trace**: a frozen manuscript-value inventory binds each reported value to a producing command, hashed inputs, environment, and predeclared comparison rule; mismatch and unverifiable values cannot silently pass.
+- **Result-to-Run Trace**: an immutable-record locator, content hash, and pre-run timestamp bind the manuscript-value inventory and each comparison rule to a producing command, hashed inputs, and environment. Scientific evidence, pipeline smoke, and resource calibration runs have separate claim roles; mismatch and unverifiable values cannot silently pass.
 
 ## P1 — major quality/compliance gains
 

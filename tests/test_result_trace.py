@@ -14,17 +14,26 @@ from readiness import result_trace  # noqa: E402
 
 def _payload() -> dict:
     return {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "inventory": {
             "manuscript_sha256": "a" * 64,
             "scope": ["Abstract", "Results"],
             "complete_for_scope": True,
             "frozen_before_execution": True,
+            "lock": {
+                "basis": "version_control_commit",
+                "locator": "git:fixture/result-trace@abc123",
+                "sha256": "c" * 64,
+                "recorded_at": "2026-10-09T08:00:00+08:00",
+            },
         },
         "runs": [
             {
                 "run_id": "run-1",
                 "status": "COMPLETED",
+                "purpose": "SCIENTIFIC_EVIDENCE",
+                "started_at": "2026-10-09T09:00:00+08:00",
+                "completed_at": "2026-10-09T09:10:00+08:00",
                 "command": "python analysis/run.py --config locked.json",
                 "environment": "Python 3.12; requirements.lock sha256:fixture",
                 "inputs": [{"id": "dataset", "sha256": "b" * 64}],
@@ -39,6 +48,7 @@ def _payload() -> dict:
                 "location": "Results, Table 2",
                 "reported_text": "83.41%",
                 "reported_unit": "percent",
+                "claim_role": "scientific_result",
                 "classification": "MATCH",
                 "run_id": "run-1",
                 "comparison": {
@@ -49,6 +59,12 @@ def _payload() -> dict:
                     "lower_inclusive": True,
                     "upper_inclusive": False,
                     "rule_frozen_before_execution": True,
+                    "rule_lock": {
+                        "basis": "version_control_commit",
+                        "locator": "git:fixture/comparison-rules@def456",
+                        "sha256": "d" * 64,
+                        "recorded_at": "2026-10-09T08:30:00+08:00",
+                    },
                 },
             }
         ],
@@ -107,6 +123,7 @@ def test_interval_endpoint_requires_explicit_boundary_disclosure():
 def test_predicate_comparison_is_checked_without_unit_guessing():
     payload = _payload()
     value = payload["values"][0]
+    rule_lock = copy.deepcopy(value["comparison"]["rule_lock"])
     value["reported_text"] = "p < 0.001"
     value["reported_unit"] = "dimensionless"
     value["comparison"] = {
@@ -115,8 +132,67 @@ def test_predicate_comparison_is_checked_without_unit_guessing():
         "threshold": "0.001",
         "computed_in_reported_unit": "0.0004",
         "rule_frozen_before_execution": True,
+        "rule_lock": rule_lock,
     }
     assert result_trace.audit_ledger(payload)["verdict"] == "PASS"
+
+
+def test_self_attested_freeze_without_lock_evidence_is_blocked():
+    payload = _payload()
+    payload["inventory"].pop("lock")
+    payload["values"][0]["comparison"].pop("rule_lock")
+
+    result = result_trace.audit_ledger(payload)
+
+    assert result["verdict"] == "BLOCKED"
+    assert any("inventory.lock" in item for item in result["errors"])
+    assert any("comparison.rule_lock" in item for item in result["errors"])
+
+
+def test_lock_recorded_after_run_start_cannot_count_as_predeclared():
+    payload = _payload()
+    payload["values"][0]["comparison"]["rule_lock"]["recorded_at"] = (
+        "2026-10-09T09:00:01+08:00"
+    )
+
+    result = result_trace.audit_ledger(payload)
+
+    assert result["verdict"] == "BLOCKED"
+    assert any("must predate" in item for item in result["errors"])
+
+
+def test_pipeline_smoke_run_cannot_back_a_scientific_result():
+    payload = _payload()
+    payload["runs"][0]["purpose"] = "PIPELINE_SMOKE"
+
+    result = result_trace.audit_ledger(payload)
+
+    assert result["verdict"] == "BLOCKED"
+    assert any("scientific_result" in item for item in result["errors"])
+
+
+def test_resource_calibration_can_only_back_resource_cost_claims():
+    payload = _payload()
+    payload["runs"][0]["purpose"] = "RESOURCE_CALIBRATION"
+    payload["values"][0]["claim_role"] = "resource_cost"
+
+    assert result_trace.audit_ledger(payload)["verdict"] == "PASS"
+
+
+def test_run_timestamps_must_be_timezone_aware_and_ordered():
+    payload = _payload()
+    payload["runs"][0]["started_at"] = "2026-10-09T09:00:00"
+
+    result = result_trace.audit_ledger(payload)
+
+    assert result["verdict"] == "BLOCKED"
+    assert any("timezone-aware" in item for item in result["errors"])
+
+    payload["runs"][0]["started_at"] = "2026-10-09T09:00:00+08:00"
+    payload["runs"][0]["completed_at"] = "2026-10-09T08:59:59+08:00"
+    result = result_trace.audit_ledger(payload)
+
+    assert any("completed_at" in item for item in result["errors"])
 
 
 def test_cli_refuses_to_overwrite_a_previous_audit(tmp_path):

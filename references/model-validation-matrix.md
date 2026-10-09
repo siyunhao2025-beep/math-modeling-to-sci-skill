@@ -190,6 +190,22 @@
 分析；每个数值至少记录 `value_id`、对应 `claim_id`、稿件位置、显示文本、单位和 producing
 `run_id`。每个运行记录命令、环境、输入 SHA-256、确定性声明及适用的随机种子。
 
+账本使用 `schema_version: "1.1"`。单写 `frozen_before_execution: true` 只是自我声明，不足以
+证明预先冻结：清单的 `inventory.lock` 和每个比较规则的 `comparison.rule_lock` 都必须记录
+`basis`（`version_control_commit / external_registration / immutable_record`）、不可变记录定位、
+内容 SHA-256 与带时区的 `recorded_at`，且时间严格早于 producing run 的 `started_at`。审计器
+校验声明的哈希格式、时间顺序和定位字段非空；它不会联网取回外部记录，因此最终人工复核仍要
+按 `locator` 打开原记录核对内容。
+
+每个运行还必须写明 `purpose` 与带时区的开始/完成时间，防止把低成本通路测试冒充科学结果：
+
+- `SCIENTIFIC_EVIDENCE`：可以支撑 `claim_role: scientific_result`；
+- `PIPELINE_SMOKE`：只证明通路/接口可运行，只能支撑 `pipeline_function`；
+- `RESOURCE_CALIBRATION`：只记录机器、队列或资源成本，只能支撑 `resource_cost`。
+
+科学运行可以同时报告其实际通路或资源成本，但后两类运行不得升级为科学结果。完成状态、退出码
+或产物存在也不等于科学有效，仍须执行本矩阵对应原型的再验证。
+
 每项数值只能进入三类：
 
 - `MATCH`：运行结果按**执行前冻结**的区间或谓词规则，与稿件显示值相符；
@@ -205,8 +221,9 @@ python scripts/readiness/result_trace.py --ledger result-trace.json \
   --out 08-readiness/result-trace-audit.json
 ```
 
-该命令只校验用户声明的账本和比较逻辑，不执行模型、不验证输入真实性，也不证明模型有效或
-科研结论正确。`PASS` 仍须与本矩阵对应原型的再验证、主张—证据审计和人工复核同时成立。
+该命令只校验用户声明的锁记录元数据、时间、角色、账本和比较逻辑，不取回外部锁记录、不执行
+模型、不验证输入真实性，也不证明模型有效或科研结论正确。`PASS` 仍须与本矩阵对应原型的
+再验证、主张—证据审计和人工复核同时成立。
 
 ## 主张—验证配对
 
