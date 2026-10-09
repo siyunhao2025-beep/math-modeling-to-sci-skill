@@ -9,12 +9,14 @@ This suite addresses preventable submission failures that remain after ordinary 
 - **Deep Journal Fit**: current official Aims & Scope, current article type, recent 12-month journal-content baseline, semantic fit review, desk-reject risk list.
 - **Reviewer Simulator**: handling editor + domain + methods/statistics + skeptical reviewer; 3–5 substantive comments, up to 3 revision/rebuttal rounds.
 - **Claim–Evidence Audit**: key claims mapped to source data/figures/tables/equations/statistics/verified citations; unsupported high-risk claims block release.
+- **Result-to-Run Trace**: an immutable-record locator, content hash, and pre-run timestamp bind the manuscript-value inventory and each comparison rule to a producing command, hashed inputs, and environment. Scientific evidence, pipeline smoke, and resource calibration runs have separate claim roles; mismatch and unverifiable values cannot silently pass.
 
 ## P1 — major quality/compliance gains
 
 - reporting guideline detection and current-official-checklist verification (PRISMA/STROBE/TRIPOD/ARRIVE/CONSORT/STARD when applicable);
 - methods/statistics checks for sample-size rationale, uncertainty/error bars, p-values, effect sizes, multiple testing, missing data, randomization/blinding and reproducibility;
 - optional LanguageTool diagnostics plus internal academic-register/overclaim checks;
+- optional held-out target-journal writing-pattern profile; learns only paraphrased structural/rhetorical observations, never source wording or scientific findings, and cannot override official requirements or protected scientific content;
 - ethics, consent, data availability, code availability, COI and funding checks; approval IDs are never fabricated.
 
 ## P2 — submission hygiene
