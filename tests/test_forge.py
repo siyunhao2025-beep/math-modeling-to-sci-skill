@@ -201,3 +201,104 @@ def test_g_gate_enforces_access_depth_for_quantitative_citation(tmp_path):
     assert not result["passed"]
     assert any("too shallow" in item for item in result["errors"])
     assert any("locator" in item for item in result["errors"])
+
+
+def complete_g_with_locked_figure(work: Path) -> tuple[Path, Path, Path]:
+    source = work / "03-revalidation" / "results" / "figure-1.csv"
+    script = work / "04-manuscript" / "figures" / "plot_figure_1.py"
+    output = work / "04-manuscript" / "figures" / "figure-1.svg"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    script.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("x,y\n1,2\n", encoding="utf-8")
+    script.write_text("# deterministic plotting source\n", encoding="utf-8")
+    output.write_text("<svg xmlns='http://www.w3.org/2000/svg'/>\n", encoding="utf-8")
+
+    dump(work / "04-manuscript" / "claim-map.json", {
+        "complete": True,
+        "claims": [{
+            "claim_id": "C1", "text": "The observed result is shown in Figure 1.",
+            "evidence_ids": ["R1"], "risk": "low", "status": "SUPPORTED",
+        }],
+    })
+    dump(work / "04-manuscript" / "figure-manifest.json", {
+        "schema_version": "2.1",
+        "complete": True,
+        "waiver_reason": "",
+        "figures": [{
+            "figure_id": "F1",
+            "claim_ids": ["C1"],
+            "source_data": ["03-revalidation/results/figure-1.csv"],
+            "script": "04-manuscript/figures/plot_figure_1.py",
+            "outputs": ["04-manuscript/figures/figure-1.svg"],
+            "sha256": {
+                "source_data": {
+                    "03-revalidation/results/figure-1.csv": forge.sha256(source),
+                },
+                "script": forge.sha256(script),
+                "outputs": {
+                    "04-manuscript/figures/figure-1.svg": forge.sha256(output),
+                },
+            },
+            "final_size": {
+                "slot_class": "single-column",
+                "width_mm": 85.0,
+                "height_mm": 60.0,
+            },
+            "editability": {
+                "class": "live-vector-text",
+                "notes": "Text and vector marks remain editable.",
+            },
+            "visual_review": {
+                "reviewer": "Author",
+                "reviewed_at": "2026-10-15T00:00:00Z",
+                "at_width_mm": 85.0,
+                "at_height_mm": 60.0,
+                "container": "manuscript single-column slot",
+                "editability_checked": True,
+            },
+        }],
+    })
+    dump(work / "04-manuscript" / "citation-audit.json", {
+        "complete": True,
+        "blockers": [],
+        "citations": [{
+            "citation_id": "R1",
+            "identity_status": "VERIFIED",
+            "support_status": "SUPPORTS",
+            "sentence_tier": "background",
+            "access_level": "metadata_only",
+        }],
+    })
+    (work / "04-manuscript" / "manuscript.md").write_text("draft", encoding="utf-8")
+    return source, script, output
+
+
+def test_g_gate_accepts_locked_figure_reviewed_at_final_size(tmp_path):
+    work = init_workspace(tmp_path)
+    complete_g_with_locked_figure(work)
+    result = forge.evaluate(work, "G")
+    assert result["passed"], result
+
+
+def test_g_gate_rejects_stale_figure_after_source_change(tmp_path):
+    work = init_workspace(tmp_path)
+    source, _, _ = complete_g_with_locked_figure(work)
+    source.write_text("x,y\n1,3\n", encoding="utf-8")
+    result = forge.evaluate(work, "G")
+    assert not result["passed"]
+    assert any("source_data hash mismatch" in item for item in result["errors"])
+
+
+def test_g_gate_rejects_unreviewed_final_size_and_unknown_editability(tmp_path):
+    work = init_workspace(tmp_path)
+    complete_g_with_locked_figure(work)
+    path = work / "04-manuscript" / "figure-manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    figure = manifest["figures"][0]
+    figure["editability"]["class"] = "fully-editable-somehow"
+    figure["visual_review"]["at_width_mm"] = 170.0
+    dump(path, manifest)
+    result = forge.evaluate(work, "G")
+    assert not result["passed"]
+    assert any("editability.class" in item for item in result["errors"])
+    assert any("final width" in item for item in result["errors"])

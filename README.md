@@ -126,6 +126,7 @@ FORGE 与旧 S1–S8 的映射见 [`references/legacy-stage-map.md`](references/
 - 主/辅模型画像与按原型生成的再验证计划；
 - 基线、公平比较、稳健性、不确定性和失败运行记录；
 - claim map、Methods map、图表契约与引用双检；
+- 图件源数据、生成脚本和交付文件的 SHA-256 锁定，以及最终版面尺寸与真实可编辑性复核；
 - SCI 稿件、修改记录和未解决证据缺口；
 - 期刊证据卡、独立模拟评审和投稿前 preflight。
 

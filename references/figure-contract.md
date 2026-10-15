@@ -54,6 +54,23 @@
 
 脚本只能检查文件、字段、尺寸和链路；图是否科学、是否误导必须逐张人工/视觉复核并记录 reviewer 与时间。
 
+### 4.1 发布锁：依赖、最终尺寸与可编辑性
+
+新建工作区的 `04-manuscript/figure-manifest.json` 使用 schema 2.1。每张正式图件除原有科学字段外，还必须声明：
+
+| 字段 | 要求 |
+|---|---|
+| `source_data` | 一个或多个工作区相对路径；不得越出工作区 |
+| `script` | 可重建图件的脚本路径 |
+| `outputs` | 实际交付文件的工作区相对路径 |
+| `sha256` | 分别锁定每个源数据、脚本和输出文件；任一文件变化即阻塞 |
+| `final_size.slot_class` | 例如 `single-column`、`double-column` 或期刊规定的命名槽位 |
+| `final_size.width_mm` / `height_mm` | 正数，表示真正投放时的物理尺寸 |
+| `editability.class` | `live-vector-text`、`outlined-text`、`embedded-raster`、`mixed` 四选一 |
+| `visual_review` | reviewer、时间、最终容器、复核宽高以及 `editability_checked=true` |
+
+“有 SVG/PDF 文件”不等于“完全可编辑”：文字转轮廓、位图嵌入或混合交付必须如实分类。复核大画布上的预览也不能替代最终栏宽/容器检查。schema 2.0 工件保持兼容，但 G 阶段会提示其缺少发布锁；升级应在重建并复核图件后完成，不能只补字段或刷新哈希。
+
 ## 5. 数量与变更
 
 不要预设“标准论文必须 N 张图”。建议数量来自未覆盖的关键 claim，而非历史平均或营销效果。

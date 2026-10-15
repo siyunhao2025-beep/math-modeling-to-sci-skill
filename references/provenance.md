@@ -36,3 +36,9 @@
 本仓库的主流程只吸收独立表述的 `references/figures4papers-profile.md`，不包含上游代码、图片、PDF、论文数据或像素级版式。另按用户要求把真实 `scientific-figure-making` 文档 Skill 安装在 `skills/scientific-figure-making/`：完整保留上游主 SKILL 与五份引用，加入本仓证据优先级、安全修订、锁定链接、完整 CC BY-NC 4.0 文本和改动说明；没有引入上游绘图脚本、图像、PDF 或论文数据。
 
 该 vendored Skill 子树继续受 CC BY-NC 4.0 约束，**不被仓库根 MIT License 重新许可**。其来源、上游文件哈希、改动说明和第三方权利边界见 `skills/scientific-figure-making/SOURCE.md`。精确资产与具体视觉配方仍保持 `REFERENCE-ONLY`；商业使用或精确复刻须另行取得许可，并核验可能存在的出版方、共同作者、数据、字体等第三方权利。
+
+## polish-sci-figures 发布契约参考源
+
+2026-10-15 审计 `zhoy0409-debug/polish-sci-figures` 的锁定提交 `bc777f283b2e32d678fc93976ddf901fdf74383a`；上游根许可证为 MIT。审计范围为根许可证、三份 Skill 入口及其与来源追踪、最终尺寸审查和交付可编辑性直接相关的一层引用。第三方仓库仅作为不可信的只读输入检查，未运行其安装器、脚本、Studio 或网络服务。
+
+本仓库独立实现三项通用机制：源数据—脚本—输出的 SHA-256 发布锁、在真实目标容器与物理尺寸下记录视觉复核、以及区分可编辑矢量文字/轮廓文字/嵌入位图/混合交付。没有复制上游代码、提示词、模板、图像、桌面/移动端 Studio 或其完整工作流；也没有引入新的运行时依赖。该机制被收束到 FORGE 的 G 阶段，不能取代 claim coverage、模型再验证、引用双检或人工科学判断。
