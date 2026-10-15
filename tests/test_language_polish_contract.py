@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SKILL = ROOT / "SKILL.md"
 PROMPT = ROOT / "prompts" / "09-language-polish.md"
 QUALITY_PROMPT = ROOT / "prompts" / "03-quality-assessment.md"
 
@@ -19,6 +20,35 @@ def test_revision_preserves_load_bearing_scientific_content():
         assert protected in text
     assert "不得重选指标来隐藏不利结果" in text
     assert "不能用“删得更多”" in text
+
+
+def test_press_conference_revision_is_passage_level_and_evidence_bound():
+    text = PROMPT.read_text(encoding="utf-8")
+    for diagnostic_class in (
+        "工作日志式叙述",
+        "修辞性自我削弱",
+        "笼统失败结论",
+        "失焦指标框架",
+        "优势埋没",
+        "无论证职责实验",
+        "弱开场",
+        "自我否定式结论",
+        "必要学术谨慎",
+    ):
+        assert diagnostic_class in text
+    assert "问题 → 缺口 → 思路 → 最硬结果" in text
+    assert "claim_id | scientific question | comparator | result | argumentative duty | destination" in text
+    assert "location | original | diagnosis | argumentative duty | disposition | proposed rewrite" in text
+    assert "预注册主指标" in text
+    assert "安全性或公平性结果" in text
+    assert "不得把事后选择包装成预先设计" in text
+    assert "覆盖说明" in text
+
+
+def test_skill_routes_explicit_defensive_writing_audits():
+    text = SKILL.read_text(encoding="utf-8")
+    assert "逐处审计防御性写作" in text
+    assert "prompts/09-language-polish.md" in text
 
 
 def test_quality_assessment_does_not_enforce_a_universal_sentence_quota():
