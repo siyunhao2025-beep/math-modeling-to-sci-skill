@@ -20,6 +20,11 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def normalize_newlines(data: bytes) -> bytes:
+    """Return canonical LF bytes for cross-platform preservation checks."""
+    return data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
 def _git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", "-C", str(repo_root), *args],
@@ -41,7 +46,7 @@ def _verify_skill_contract(repo_root: Path, manifest: dict, errors: list[str]) -
     if not path.exists():
         errors.append("SKILL.md is missing")
         return
-    data = path.read_bytes()
+    data = normalize_newlines(path.read_bytes())
     n = int(info["bytes"])
     if len(data) < n:
         errors.append(f"SKILL.md shorter than reviewed contract: {len(data)} < {n}")

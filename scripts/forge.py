@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -49,6 +50,7 @@ MANUSCRIPT_NAMES = ("manuscript.md", "manuscript.tex", "manuscript.docx")
 READY = "READY_FOR_HUMAN_SUBMISSION_CHECK"
 ACCESS_RANK = {"metadata_only": 0, "abstract_only": 1, "full_text": 2, "project_result": 3}
 MIN_ACCESS = {"background": 0, "method": 1, "quantitative": 2, "causal": 2, "mechanistic": 2}
+EDITABILITY_CLASSES = {"live-vector-text", "outlined-text", "embedded-raster", "mixed"}
 
 
 def now() -> str:
@@ -86,6 +88,76 @@ def inside(root: Path, candidate: Path) -> bool:
         return True
     except (ValueError, OSError):
         return False
+
+
+def same_workspace_file(root: Path, left: str, right: str) -> bool:
+    """Return whether two safe workspace paths identify the same file."""
+    if not isinstance(left, str) or not left.strip() or not isinstance(right, str) or not right.strip():
+        return False
+    left_path = root / left
+    right_path = root / right
+    if not inside(root, left_path) or not inside(root, right_path):
+        return False
+    try:
+        if left_path.resolve() == right_path.resolve():
+            return True
+    except OSError:
+        return False
+    try:
+        return left_path.is_file() and right_path.is_file() and os.path.samefile(left_path, right_path)
+    except OSError:
+        return False
+
+
+def schema_at_least(value: object, major: int, minor: int) -> bool:
+    """Return whether a dotted numeric schema version meets a minimum."""
+    try:
+        parts = tuple(int(part) for part in str(value).split("."))
+    except (TypeError, ValueError):
+        return False
+    padded = (parts + (0, 0))[:2]
+    return padded >= (major, minor)
+
+
+def path_list(value: object) -> list[str]:
+    if isinstance(value, str) and value.strip():
+        return [value]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str) and item.strip()]
+    return []
+
+
+def positive_number(value: object) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+        and float(value) > 0
+    )
+
+
+def verify_declared_hash(
+    root: Path,
+    rel: str,
+    expected: object,
+    label: str,
+    figure_id: object,
+    errors: list[str],
+) -> None:
+    """Verify one workspace-relative figure dependency without leaving the workspace."""
+    candidate = root / rel
+    if Path(rel).is_absolute() or not inside(root, candidate):
+        errors.append(f"figure {figure_id!r} {label} path leaves workspace: {rel!r}")
+        return
+    if not candidate.is_file():
+        errors.append(f"figure {figure_id!r} {label} file is missing: {rel!r}")
+        return
+    if not isinstance(expected, str) or len(expected) != 64:
+        errors.append(f"figure {figure_id!r} lacks a valid {label} sha256 for {rel!r}")
+        return
+    actual = sha256(candidate)
+    if actual.lower() != expected.lower():
+        errors.append(f"figure {figure_id!r} {label} hash mismatch for {rel!r}")
 
 
 def log_event(root: Path, event: str, **fields: object) -> None:
@@ -129,7 +201,7 @@ def template_payloads() -> dict[str, object]:
             "schema_version": "2.0", "complete": False, "claims": []
         },
         "04-manuscript/figure-manifest.json": {
-            "schema_version": "2.0", "complete": False, "figures": [], "waiver_reason": ""
+            "schema_version": "2.1", "complete": False, "figures": [], "waiver_reason": ""
         },
         "04-manuscript/citation-audit.json": {
             "schema_version": "2.0", "complete": False, "citations": [], "blockers": []
@@ -367,12 +439,87 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
     figure_items = figures.get("figures") or []
     if not figure_items and not figures.get("waiver_reason"):
         errors.append("no figures declared and no waiver_reason supplied")
+    figure_schema = figures.get("schema_version")
+    strict_figure_release = schema_at_least(figure_schema, 2, 1)
+    if figure_schema and not str(figure_schema).replace(".", "", 1).isdigit():
+        errors.append(f"invalid figure manifest schema_version {figure_schema!r}")
+    elif figure_items and not strict_figure_release:
+        warnings.append(
+            "legacy figure manifest: schema_version 2.1 adds dependency hashes, final-size review "
+            "and explicit editability; existing 2.0 workspaces remain readable"
+        )
     for fig in figure_items:
-        if not fig.get("figure_id") or not fig.get("claim_ids") or not fig.get("source_data"):
+        figure_id = fig.get("figure_id")
+        source_paths = path_list(fig.get("source_data"))
+        if not figure_id or not fig.get("claim_ids") or not source_paths:
             errors.append("each figure needs figure_id, claim_ids and source_data")
         review = fig.get("visual_review") or {}
         if not review.get("reviewer") or not review.get("reviewed_at"):
-            errors.append(f"figure {fig.get('figure_id')!r} lacks signed visual_review")
+            errors.append(f"figure {figure_id!r} lacks signed visual_review")
+        if not strict_figure_release:
+            continue
+
+        script_rel = fig.get("script")
+        output_paths = path_list(fig.get("outputs"))
+        if not isinstance(script_rel, str) or not script_rel.strip():
+            errors.append(f"figure {figure_id!r} needs a reproducible script path")
+        if not output_paths:
+            errors.append(f"figure {figure_id!r} needs at least one declared output")
+
+        input_paths = [("source_data", rel) for rel in source_paths]
+        if isinstance(script_rel, str) and script_rel.strip():
+            input_paths.append(("script", script_rel))
+        for output_rel in output_paths:
+            for input_label, input_rel in input_paths:
+                if same_workspace_file(root, output_rel, input_rel):
+                    errors.append(
+                        f"figure {figure_id!r} output {output_rel!r} aliases input "
+                        f"{input_label} {input_rel!r}; rendering must not overwrite evidence inputs"
+                    )
+
+        hashes = fig.get("sha256") or {}
+        source_hashes = hashes.get("source_data") if isinstance(hashes, dict) else {}
+        output_hashes = hashes.get("outputs") if isinstance(hashes, dict) else {}
+        source_hashes = source_hashes if isinstance(source_hashes, dict) else {}
+        output_hashes = output_hashes if isinstance(output_hashes, dict) else {}
+        for rel in source_paths:
+            verify_declared_hash(root, rel, source_hashes.get(rel), "source_data", figure_id, errors)
+        if isinstance(script_rel, str) and script_rel.strip():
+            script_hash = hashes.get("script") if isinstance(hashes, dict) else None
+            verify_declared_hash(root, script_rel, script_hash, "script", figure_id, errors)
+        for rel in output_paths:
+            verify_declared_hash(root, rel, output_hashes.get(rel), "output", figure_id, errors)
+
+        final_size = fig.get("final_size") or {}
+        width = final_size.get("width_mm") if isinstance(final_size, dict) else None
+        height = final_size.get("height_mm") if isinstance(final_size, dict) else None
+        if not isinstance(final_size, dict) or not str(final_size.get("slot_class") or "").strip():
+            errors.append(f"figure {figure_id!r} needs final_size.slot_class")
+        if not positive_number(width) or not positive_number(height):
+            errors.append(f"figure {figure_id!r} needs positive final_size width_mm and height_mm")
+
+        editability = fig.get("editability") or {}
+        editability_class = editability.get("class") if isinstance(editability, dict) else None
+        if editability_class not in EDITABILITY_CLASSES:
+            errors.append(
+                f"figure {figure_id!r} editability.class must be one of "
+                f"{sorted(EDITABILITY_CLASSES)}"
+            )
+
+        reviewed_width = review.get("at_width_mm") if isinstance(review, dict) else None
+        reviewed_height = review.get("at_height_mm") if isinstance(review, dict) else None
+        if positive_number(width) and (
+            not positive_number(reviewed_width) or abs(float(reviewed_width) - float(width)) > 0.1
+        ):
+            errors.append(f"figure {figure_id!r} was not reviewed at its final width")
+        if positive_number(height) and (
+            not positive_number(reviewed_height) or abs(float(reviewed_height) - float(height)) > 0.1
+        ):
+            errors.append(f"figure {figure_id!r} was not reviewed at its final height")
+        if not isinstance(review, dict) or not str(review.get("container") or "").strip():
+            errors.append(f"figure {figure_id!r} visual_review needs the final container")
+        if not isinstance(review, dict) or review.get("editability_checked") is not True:
+            errors.append(f"figure {figure_id!r} visual_review must confirm editability_checked=true")
 
     citations = load_required(root, "04-manuscript/citation-audit.json", errors)
     if citations.get("complete") is not True:

@@ -185,6 +185,39 @@ def audit() -> list[dict]:
     out.append(result("F2-18", ok, "three audited source commits, MIT license and VERSION=2.0.0",
                       "Missing provenance or versioning obscures what was actually integrated.",
                       "Record audited commits, license boundaries and release version."))
+
+    nested_required = (
+        "skills/scientific-figure-making/SKILL.md",
+        "skills/scientific-figure-making/LICENSE",
+        "skills/scientific-figure-making/SOURCE.md",
+        "skills/scientific-figure-making/agents/openai.yaml",
+        "skills/scientific-figure-making/references/api.md",
+        "skills/scientific-figure-making/references/common-patterns.md",
+        "skills/scientific-figure-making/references/demos.md",
+        "skills/scientific-figure-making/references/design-theory.md",
+        "skills/scientific-figure-making/references/tutorials.md",
+    )
+    nested_skill = text("skills/scientific-figure-making/SKILL.md")
+    nested_source = text("skills/scientific-figure-making/SOURCE.md")
+    nested_demos = text("skills/scientific-figure-making/references/demos.md")
+    nested_agent = text("skills/scientific-figure-making/agents/openai.yaml")
+    locked_commit = "3c181f85e82c6f24948fcaaf3be6696102b41d8d"
+    ok = (
+        all(exists(path) for path in nested_required)
+        and frontmatter_keys(nested_skill) == ["name", "description"]
+        and "../../references/figure-contract.md" in nested_skill
+        and "../../references/figures4papers-profile.md" in nested_skill
+        and "overrides every conflicting recommendation" in nested_skill
+        and "$scientific-figure-making" in nested_agent
+        and "not relicensed" in nested_source
+        and locked_commit in nested_source
+        and f"/tree/{locked_commit}/" in nested_demos
+        and "/tree/main/" not in nested_demos
+    )
+    out.append(result("F2-19", ok,
+                      "vendored scientific-figure-making skill, local safety precedence, pinned demos and CC BY-NC boundary",
+                      "A partial or ungoverned nested skill could bypass evidence gates or be misrepresented as MIT.",
+                      "Restore the complete nested skill and its license/source/safety contract."))
     return out
 
 

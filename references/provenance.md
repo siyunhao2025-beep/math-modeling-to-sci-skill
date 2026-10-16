@@ -28,3 +28,23 @@
 - 采用“零静默损失”取代“所有内容必须进入正文”。
 
 复用或改写上游代码/文本时保留 MIT 许可与本文件归因。不要将第三方论文语料、付费全文或未授权模板打包进本 skill。
+
+## figures4papers 非商业参考源
+
+2026-09-24 完整审计 `ChenLiu-1996/figures4papers` 的锁定提交 `3c181f85e82c6f24948fcaaf3be6696102b41d8d`。上游声明 CC BY-NC 4.0，而非 MIT；来源、许可链接、文件计数与审计范围固定在 `config/figures4papers.lock.json`。
+
+本仓库的主流程只吸收独立表述的 `references/figures4papers-profile.md`，不包含上游代码、图片、PDF、论文数据或像素级版式。另按用户要求把真实 `scientific-figure-making` 文档 Skill 安装在 `skills/scientific-figure-making/`：完整保留上游主 SKILL 与五份引用，加入本仓证据优先级、安全修订、锁定链接、完整 CC BY-NC 4.0 文本和改动说明；没有引入上游绘图脚本、图像、PDF 或论文数据。
+
+该 vendored Skill 子树继续受 CC BY-NC 4.0 约束，**不被仓库根 MIT License 重新许可**。其来源、上游文件哈希、改动说明和第三方权利边界见 `skills/scientific-figure-making/SOURCE.md`。精确资产与具体视觉配方仍保持 `REFERENCE-ONLY`；商业使用或精确复刻须另行取得许可，并核验可能存在的出版方、共同作者、数据、字体等第三方权利。
+
+## polish-sci-figures 发布契约参考源
+
+2026-10-15 审计 `zhoy0409-debug/polish-sci-figures` 的锁定提交 `bc777f283b2e32d678fc93976ddf901fdf74383a`；上游根许可证为 MIT。审计范围为根许可证、三份 Skill 入口及其与来源追踪、最终尺寸审查和交付可编辑性直接相关的一层引用。第三方仓库仅作为不可信的只读输入检查，未运行其安装器、脚本、Studio 或网络服务。
+
+本仓库独立实现三项通用机制：源数据—脚本—输出的 SHA-256 发布锁、在真实目标容器与物理尺寸下记录视觉复核、以及区分可编辑矢量文字/轮廓文字/嵌入位图/混合交付。没有复制上游代码、提示词、模板、图像、桌面/移动端 Studio 或其完整工作流；也没有引入新的运行时依赖。该机制被收束到 FORGE 的 G 阶段，不能取代 claim coverage、模型再验证、引用双检或人工科学判断。
+
+## EasyViz 输入—输出冲突参考源
+
+2026-10-16 审计 `idealstarry/EasyViz` 的锁定提交 `9dd42a987fe09a0330a686cee8be0e83ee4c6eec`；上游根许可证为 MIT。只读检查了许可证、`skills/easyviz/SKILL.md`、其直接引用的 evidence-first create 契约，以及输出/输入冲突测试；未执行第三方代码、安装器或网络服务。
+
+本仓库只独立实现一个更窄的安全机制：FORGE G 阶段拒绝任何与 `source_data` 或 `script` 具有相同规范路径或文件身份的 `outputs`，包括硬链接与符号链接别名。没有复制上游实现、提示词、规格格式、绘图运行时、分析伴随文件或渲染功能；没有新增依赖。该检查保护证据输入免遭输出覆盖，不改变数模转 SCI 定位、FORGE × TRACE、S1–S8 兼容层、主张上限、模型再验证、引用双检、零静默损失或顶层状态。
