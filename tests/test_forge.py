@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 
 
@@ -287,6 +288,40 @@ def test_g_gate_rejects_stale_figure_after_source_change(tmp_path):
     result = forge.evaluate(work, "G")
     assert not result["passed"]
     assert any("source_data hash mismatch" in item for item in result["errors"])
+
+
+def test_g_gate_rejects_output_that_is_the_source_file(tmp_path):
+    work = init_workspace(tmp_path)
+    source, _, _ = complete_g_with_locked_figure(work)
+    path = work / "04-manuscript" / "figure-manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    figure = manifest["figures"][0]
+    source_rel = figure["source_data"][0]
+    figure["outputs"] = [source_rel]
+    figure["sha256"]["outputs"] = {source_rel: forge.sha256(source)}
+    dump(path, manifest)
+
+    result = forge.evaluate(work, "G")
+
+    assert not result["passed"]
+    assert any("aliases input source_data" in item for item in result["errors"]), result
+
+
+def test_g_gate_rejects_output_hardlink_alias_of_script(tmp_path):
+    work = init_workspace(tmp_path)
+    _, script, output = complete_g_with_locked_figure(work)
+    output.unlink()
+    os.link(script, output)
+    path = work / "04-manuscript" / "figure-manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    output_rel = manifest["figures"][0]["outputs"][0]
+    manifest["figures"][0]["sha256"]["outputs"][output_rel] = forge.sha256(output)
+    dump(path, manifest)
+
+    result = forge.evaluate(work, "G")
+
+    assert not result["passed"]
+    assert any("aliases input script" in item for item in result["errors"]), result
 
 
 def test_g_gate_rejects_unreviewed_final_size_and_unknown_editability(tmp_path):

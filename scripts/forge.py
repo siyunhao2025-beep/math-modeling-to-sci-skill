@@ -90,6 +90,25 @@ def inside(root: Path, candidate: Path) -> bool:
         return False
 
 
+def same_workspace_file(root: Path, left: str, right: str) -> bool:
+    """Return whether two safe workspace paths identify the same file."""
+    if not isinstance(left, str) or not left.strip() or not isinstance(right, str) or not right.strip():
+        return False
+    left_path = root / left
+    right_path = root / right
+    if not inside(root, left_path) or not inside(root, right_path):
+        return False
+    try:
+        if left_path.resolve() == right_path.resolve():
+            return True
+    except OSError:
+        return False
+    try:
+        return left_path.is_file() and right_path.is_file() and os.path.samefile(left_path, right_path)
+    except OSError:
+        return False
+
+
 def schema_at_least(value: object, major: int, minor: int) -> bool:
     """Return whether a dotted numeric schema version meets a minimum."""
     try:
@@ -446,6 +465,17 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
             errors.append(f"figure {figure_id!r} needs a reproducible script path")
         if not output_paths:
             errors.append(f"figure {figure_id!r} needs at least one declared output")
+
+        input_paths = [("source_data", rel) for rel in source_paths]
+        if isinstance(script_rel, str) and script_rel.strip():
+            input_paths.append(("script", script_rel))
+        for output_rel in output_paths:
+            for input_label, input_rel in input_paths:
+                if same_workspace_file(root, output_rel, input_rel):
+                    errors.append(
+                        f"figure {figure_id!r} output {output_rel!r} aliases input "
+                        f"{input_label} {input_rel!r}; rendering must not overwrite evidence inputs"
+                    )
 
         hashes = fig.get("sha256") or {}
         source_hashes = hashes.get("source_data") if isinstance(hashes, dict) else {}
