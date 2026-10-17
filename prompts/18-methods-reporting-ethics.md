@@ -6,6 +6,11 @@ Turn vague “methodological rigor” into explicit, field-appropriate checks an
 
 Run `scripts/readiness/compliance_audit.py` first. Treat its output as a pre-screen, not certification.
 
+For every number in the frozen Abstract/Results/Table/Figure scope, run
+`scripts/readiness/result_trace.py` against a value ledger before release. Preserve `MISMATCH` and
+`UNVERIFIABLE` outcomes; do not repair them by widening a comparison rule after seeing the result.
+The audit validates declared bindings only—it does not rerun code, infer units, or certify the model.
+
 ## A. Reporting guideline selection
 
 Based on the actual study design, identify relevant guideline families such as:
@@ -67,6 +72,12 @@ Check applicability and presence of:
 
 Never invent approval IDs, consent status, funding grants, author contributions or conflict statements.
 
+For data and code statements, presence is not enough. The pre-screen classifies each statement as public with a
+concrete locator, restricted with both a reason and an access route, included at a named manuscript/supplement
+location, not applicable with a rationale, vague request-only, or missing. A bare repository name and “available
+upon reasonable request” alone do not pass. A syntactically plausible URL, DOI or accession still requires an
+author/human to verify access while logged out at submission time.
+
 ## D. Reproducibility package
 
 If data/code/supplements exist, prepare an audit-ready manifest:
@@ -80,6 +91,8 @@ If data/code/supplements exist, prepare an audit-ready manifest:
 - whether anonymization/blinding is required for review.
 
 If sharing is restricted, state the restriction truthfully and identify what the target journal requires.
+Bind public code to the release, tag, commit or archived version used for the manuscript. Do not claim “fully
+reproducible” from a link, a schema PASS or an author rerun; that wording requires a recorded independent rerun.
 
 ## Output
 

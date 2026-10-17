@@ -9,9 +9,10 @@ journal articles as an auditable recent-content baseline.
 from __future__ import annotations
 
 import argparse
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 import os
 from pathlib import Path
+import re
 import statistics
 import sys
 from urllib.parse import quote
@@ -22,6 +23,51 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from readiness.utils import cosine_similarity, ir_text, load_json, save_json  # noqa: E402
 
 CROSSREF = "https://api.crossref.org"
+
+
+def normalize_issn(value: str) -> str | None:
+    """Return a canonical ISSN only when its syntax and check digit are valid."""
+    compact = (value or "").strip().replace("-", "").replace(" ", "").upper()
+    if not re.fullmatch(r"[0-9]{7}[0-9X]", compact):
+        return None
+    total = sum(int(char) * weight for char, weight in zip(compact[:7], range(8, 1, -1)))
+    check = (11 - total % 11) % 11
+    expected = "X" if check == 10 else str(check)
+    if compact[-1] != expected:
+        return None
+    return compact[:4] + "-" + compact[4:]
+
+
+def evidence_freshness(checked_at: str | None, max_age_days: int | None,
+                       *, now: datetime | None = None) -> dict:
+    """Classify official journal evidence against an explicit operational age policy."""
+    if not checked_at:
+        return {"status": "UNVERIFIED", "checked_at": None, "age_days": None,
+                "max_age_days": max_age_days}
+    if max_age_days is None:
+        return {"status": "POLICY_UNSET", "checked_at": checked_at, "age_days": None,
+                "max_age_days": None}
+    if max_age_days < 0:
+        raise ValueError("max_evidence_age_days must be non-negative")
+    try:
+        parsed = datetime.fromisoformat(checked_at.replace("Z", "+00:00"))
+    except ValueError:
+        return {"status": "INVALID_TIMESTAMP", "checked_at": checked_at, "age_days": None,
+                "max_age_days": max_age_days}
+    if parsed.tzinfo is None:
+        return {"status": "INVALID_TIMESTAMP", "checked_at": checked_at, "age_days": None,
+                "max_age_days": max_age_days}
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
+    age_seconds = (current.astimezone(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds()
+    if age_seconds < 0:
+        return {"status": "FUTURE_TIMESTAMP", "checked_at": checked_at,
+                "age_days": round(age_seconds / 86400, 3), "max_age_days": max_age_days}
+    age_days = age_seconds / 86400
+    return {"status": "CURRENT" if age_days <= max_age_days else "STALE",
+            "checked_at": checked_at, "age_days": round(age_days, 3),
+            "max_age_days": max_age_days}
 
 
 def manuscript_text(path: str) -> str:
@@ -64,17 +110,24 @@ def recent_crossref(issn: str, months: int = 12, limit: int = 100, mailto: str |
 def run(manuscript: str, journal_name: str, issn: str, aims_scope_file: str, out: str,
         *, article_types_file: str | None = None, article_type: str | None = None,
         scope_source_url: str | None = None, article_type_source_url: str | None = None,
+        evidence_checked_at: str | None = None, max_evidence_age_days: int | None = None,
         months: int = 12, limit: int = 100, mailto: str | None = None,
-        recent_cache: str | None = None) -> dict:
+        recent_cache: str | None = None, now: datetime | None = None) -> dict:
     text = manuscript_text(manuscript)
     scope = Path(aims_scope_file).read_text(encoding="utf-8") if Path(aims_scope_file).is_file() else ""
+    canonical_issn = normalize_issn(issn)
+    freshness = evidence_freshness(evidence_checked_at, max_evidence_age_days, now=now)
     if recent_cache and Path(recent_cache).is_file():
         recent = load_json(recent_cache)
         if isinstance(recent, dict):
             recent = recent.get("articles", [])
+        fetch_error = None
+    elif not canonical_issn:
+        recent = []
+        fetch_error = "recent corpus not fetched because the ISSN identity is invalid"
     else:
         try:
-            recent = recent_crossref(issn, months, limit, mailto)
+            recent = recent_crossref(canonical_issn or issn, months, limit, mailto)
         except Exception as exc:
             recent = []
             fetch_error = str(exc)
@@ -93,10 +146,14 @@ def run(manuscript: str, journal_name: str, issn: str, aims_scope_file: str, out
 
     risks = []
     blockers = []
+    if not canonical_issn:
+        blockers.append("journal identity is not anchored to a valid ISSN")
     if not scope.strip() or not scope_source_url:
         blockers.append("official Aims & Scope text/provenance missing")
-    if not article_type_verified:
+    if not article_type_verified or not article_type_source_url:
         blockers.append("article type not verified against current journal guidance")
+    if freshness["status"] != "CURRENT":
+        blockers.append(f"official journal requirements are not current ({freshness['status'].lower()})")
     if scope_score < 0.12:
         risks.append({"code": "SCOPE_LOW", "severity": "high", "detail": f"lexical scope similarity is low ({scope_score})"})
     if recent and recent_top10 < 0.10:
@@ -109,22 +166,30 @@ def run(manuscript: str, journal_name: str, issn: str, aims_scope_file: str, out
     result = {
         "schema_version": "1.0",
         "journal": journal_name,
-        "issn": issn,
+        "issn": canonical_issn or issn,
+        "journal_identity": {
+            "key": f"issn:{canonical_issn}" if canonical_issn else None,
+            "status": "RESOLVED" if canonical_issn else "UNRESOLVED",
+        },
         "article_type": article_type,
         "article_type_verified": article_type_verified,
         "allowed_article_types": allowed_types,
         "official_evidence": {
+            "source_class": "official_requirement",
             "aims_scope_source_url": scope_source_url,
             "article_type_source_url": article_type_source_url,
             "aims_scope_file": aims_scope_file,
+            "freshness": freshness,
         },
         "recent_corpus": {
+            "source_class": "observed_pattern",
             "source": "Crossref recent published/online journal records unless a verified cache was supplied",
             "months": months,
             "count": len(recent),
             "mean_similarity": recent_mean,
             "top10_mean_similarity": recent_top10,
             "items": sorted([dict(x, similarity=s) for x, s in zip(recent, recent_scores)], key=lambda x: x["similarity"], reverse=True)[:20],
+            "important_limit": "Observed article patterns cannot establish current author requirements or policies.",
         },
         "scope_similarity": scope_score,
         "baseline_fit_score_0_100": score,
@@ -147,6 +212,10 @@ def main() -> int:
     ap.add_argument("--article-types-file")
     ap.add_argument("--article-type")
     ap.add_argument("--article-type-source-url")
+    ap.add_argument("--evidence-checked-at",
+                    help="Timezone-aware ISO-8601 time when official journal pages were checked")
+    ap.add_argument("--max-evidence-age-days", type=int,
+                    help="Project-defined operational freshness limit; not a scientific threshold")
     ap.add_argument("--recent-cache")
     ap.add_argument("--months", type=int, default=12)
     ap.add_argument("--limit", type=int, default=100)
@@ -156,6 +225,8 @@ def main() -> int:
     result = run(args.manuscript, args.journal_name, args.issn, args.aims_scope_file, args.out,
                  article_types_file=args.article_types_file, article_type=args.article_type,
                  scope_source_url=args.scope_source_url, article_type_source_url=args.article_type_source_url,
+                 evidence_checked_at=args.evidence_checked_at,
+                 max_evidence_age_days=args.max_evidence_age_days,
                  months=args.months, limit=args.limit, mailto=args.mailto, recent_cache=args.recent_cache)
     print(f"fit={result['baseline_fit_score_0_100']} blockers={len(result['blockers'])} -> {args.out}")
     return 0 if not result["blockers"] else 2

@@ -83,6 +83,8 @@ def resolve_inputs(
     article_types_file: str | None = None,
     article_type: str | None = None,
     article_type_source_url: str | None = None,
+    evidence_checked_at: str | None = None,
+    max_evidence_age_days: int | None = None,
     build_tex: str | None = None,
     source_root: str | None = None,
 ) -> dict[str, Any]:
@@ -128,6 +130,9 @@ def resolve_inputs(
         "article_types_file": _portable(resolved_types),
         "article_type": article_type or ev.get("article_type"),
         "article_type_source_url": article_type_source_url or ev.get("article_type_source_url"),
+        "evidence_checked_at": evidence_checked_at or ev.get("checked_at"),
+        "max_evidence_age_days": (max_evidence_age_days if max_evidence_age_days is not None
+                                  else ev.get("max_evidence_age_days")),
         "build_tex": _portable(resolved_build_tex),
         "source_root": source_root or _portable(root / "00-input"),
         "journal_match": _portable(jm_path) if jm_path.is_file() else None,
@@ -156,11 +161,18 @@ def _write_missing_journal_fit(out: Path, inputs: dict, missing: list[str]) -> N
         "article_type_verified": False,
         "allowed_article_types": [],
         "official_evidence": {
+            "source_class": "official_requirement",
             "aims_scope_source_url": inputs.get("scope_source_url"),
             "article_type_source_url": inputs.get("article_type_source_url"),
             "aims_scope_file": inputs.get("aims_scope_file"),
+            "freshness": {
+                "status": "UNVERIFIED",
+                "checked_at": inputs.get("evidence_checked_at"),
+                "max_age_days": inputs.get("max_evidence_age_days"),
+            },
         },
-        "recent_corpus": {"source": "not run", "months": 12, "count": 0, "mean_similarity": 0.0, "top10_mean_similarity": 0.0, "items": []},
+        "recent_corpus": {"source_class": "observed_pattern", "source": "not run", "months": 12,
+                          "count": 0, "mean_similarity": 0.0, "top10_mean_similarity": 0.0, "items": []},
         "scope_similarity": 0.0,
         "baseline_fit_score_0_100": 0.0,
         "risks": [],
@@ -225,8 +237,10 @@ def run_from_workdir(
         "article_types_file": inputs.get("article_types_file"),
         "article_type": inputs.get("article_type"),
         "article_type_source_url": inputs.get("article_type_source_url"),
+        "evidence_checked_at": inputs.get("evidence_checked_at"),
+        "max_evidence_age_days": inputs.get("max_evidence_age_days"),
     }
-    missing_jf = [key for key, value in jf_required.items() if not value]
+    missing_jf = [key for key, value in jf_required.items() if value is None or value == ""]
     if not missing_jf:
         try:
             journal_fit.run(
@@ -239,6 +253,8 @@ def run_from_workdir(
                 article_type=inputs["article_type"],
                 scope_source_url=inputs["scope_source_url"],
                 article_type_source_url=inputs["article_type_source_url"],
+                evidence_checked_at=inputs["evidence_checked_at"],
+                max_evidence_age_days=inputs["max_evidence_age_days"],
                 mailto=mailto or os.getenv("CROSSREF_MAILTO"),
             )
             executed.append("journal_fit")

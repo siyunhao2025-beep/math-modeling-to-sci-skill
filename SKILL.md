@@ -1,6 +1,6 @@
 ---
 name: math-modeling-to-sci
-description: 将已有数学建模报告、竞赛论文、技术建模文档或可复现实验工程转化为证据可追溯、方法经复核、面向真实期刊的 SCI 稿件。用于 Word/LaTeX/Markdown/项目文件的只读体检、体裁重构、研究问题与贡献重定位、模型再验证、引用双重核验、图表与论证链设计、期刊匹配、模板适配、模拟审稿、返修和投稿前检查。尤其适用于 MCM/ICM、国赛、华为杯等建模成果转论文；不用于凭空补实验、伪造引用、保证录用或把普通英文润色冒充研究升级。
+description: 将已有数学建模报告、竞赛论文、技术建模文档或可复现实验工程转化为证据可追溯、方法经复核、面向真实期刊的 SCI 稿件。用于 Word/LaTeX/Markdown/项目文件的只读体检、体裁重构、研究问题与贡献重定位、模型再验证、引用双重核验、图表与论证链设计、逐处防御性写作审计、期刊匹配、模板适配、模拟审稿、返修和投稿前检查。尤其适用于 MCM/ICM、国赛、华为杯等建模成果转论文；不用于凭空补实验、伪造引用、选择性隐瞒结果、保证录用或把普通英文润色冒充研究升级。
 ---
 
 # Math Modeling to SCI · M²SCI Forge
@@ -51,6 +51,7 @@ description: 将已有数学建模报告、竞赛论文、技术建模文档或�
 | 已有稿件，补严谨性与证据 | 从最早失效阶段回退 | `references/change-control.md` |
 | 只做模型验证与实验补强 | O → R | `references/model-validation-matrix.md` |
 | 只做引用、论证或图表审计 | G | `references/evidence-and-citation.md`、`references/figure-contract.md` |
+| 逐处审计防御性写作 / 按“发布会原则”重构 | G | `prompts/09-language-polish.md` 的 P5.1；输出覆盖说明、逐处诊断与证据有界改法 |
 | 只找期刊或做投稿前检查 | E | `references/editorial-fit-and-preflight.md` |
 | 收到审稿意见 | 先做变更分级，再回退到 O/R/G/E | `references/change-control.md` |
 
