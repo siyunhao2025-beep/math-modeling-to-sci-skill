@@ -145,6 +145,23 @@ def test_compliance_flags_unlocated_code_repository_when_code_is_material(tmp_pa
     assert result["availability_statement_audit"]["code"]["status"] == "PRESENT_WITHOUT_ROUTE"
 
 
+def test_compliance_accepts_combined_data_and_code_statement_for_both_subjects(tmp_path):
+    text = (
+        "We implemented the analysis in Python. Data and source code are available at "
+        "https://example.invalid/archive/v1. Funding: none. Conflict of interest: none."
+    )
+    inp = tmp_path / "paper.txt"
+    out = tmp_path / "compliance.json"
+    inp.write_text(text, encoding="utf-8")
+
+    result = compliance_run(str(inp), str(out))
+
+    assert "E03" not in result["blockers"]
+    assert "R02" not in result["warnings"]
+    assert result["availability_statement_audit"]["data"]["status"] == "PUBLIC_WITH_LOCATOR"
+    assert result["availability_statement_audit"]["code"]["status"] == "PUBLIC_WITH_LOCATOR"
+
+
 def test_preflight_can_reach_human_check_when_all_required_artifacts_clear(tmp_path):
     wd = tmp_path / "run"
     clear_required_artifacts(wd)

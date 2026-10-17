@@ -34,13 +34,16 @@ def has(text: str, pattern: str) -> bool:
 DATA_STATEMENT = re.compile(
     r"\bdata(?:\s+and\s+code)?\s+availability\b|"
     r"\bavailability\s+of\s+(?:the\s+)?data\b|"
-    r"\bdata\s+(?:are|is|will\s+be)\s+(?:available|deposited|archived|included)\b|"
+    r"\bdata(?:\s+and\s+(?:source\s+)?code)?\s+"
+    r"(?:are|is|will\s+be)\s+(?:publicly\s+)?(?:available|deposited|archived|included)\b|"
     r"\b(?:supporting|underlying|processed|raw)\s+data\b.{0,120}"
     r"\b(?:available|deposited|archived|included)\b",
     re.I | re.S,
 )
 CODE_STATEMENT = re.compile(
     r"\bcode\s+availability\b|\bavailability\s+of\s+(?:the\s+)?code\b|"
+    r"\b(?:data\s+and\s+)?(?:analysis\s+|source\s+|custom\s+)?code\s+"
+    r"(?:are|is|will\s+be)\s+(?:publicly\s+)?(?:available|deposited|archived|included)\b|"
     r"\b(?:analysis|source|custom)\s+code\b.{0,120}"
     r"\b(?:available|deposited|archived|included)\b",
     re.I | re.S,
