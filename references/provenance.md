@@ -152,3 +152,20 @@ hooks、分析脚本或外部服务。
 
 该增量仍受主张上限、零静默损失、Protected Span Lock、FORGE × TRACE 与模型再验证约束；
 不改变数模成果转 SCI 定位、引用身份/支持双检、旧 S1–S8 兼容层或四种顶层状态。
+
+## 2026-10-17 数据与代码可用性声明增量审计
+
+候选星数采集于 2026-10-17 10:20–10:24（Asia/Shanghai），只作发现信号。候选内容均按不可信
+输入处理；只读取锁定提交的许可证、主入口和直接相关资料，没有执行安装器、hooks 或第三方脚本。
+
+| 来源 | 锁定提交 | 快照 / 许可 | 采用与拒绝边界 |
+|---|---|---|---|
+| `KalarisLabs/research-agent-skills`（`reproducibility-statement`） | `df088027ff233dc511fa74cb7f406b4e87fa438c` | 22★ / 仓库 LICENSE 为 MIT，含第三方通知；GitHub 元数据未识别许可证 | 采用“公开材料有具体定位、受限材料同时写原因与获取路径、入口在未登录状态检查、完全可复现需非作者独立复跑”的抽象机制，按现有合规预筛独立实现。未复制声明模板、代码、领域清单或文字；其专用 eval 只有两个触发样例，因此不把上游自评当作验证结论。 |
+| `WenyuChiou/academic-writing-skills` | `06fbdfd75b5f92165d9dd3b832d7382ab37a095f` | 107★ / MIT | 生命周期与 exact-candidate gate 设计完整，但与 FORGE × TRACE、Protected Span Lock、claim map 和交付门高度重叠，且未补本轮可用性声明缺口；拒绝再加第二套全稿框架。 |
+| `samasarvii/literature-review` | `fb1297d8ac997f044b672e3c6a3e631863da8bdb` | 0★ / MIT | 来源梯级、claim card 和条件化置信度清楚，但与现有检索、访问深度和引用双检重叠；强制长引文还增加版权与上下文负担，本轮不采用。 |
+| `cvYouTian/chinese-academic-word` | `7a83f4ddeb5a083437f55b19463e5b2e6b65368d` | 0★ / MIT | 可编辑 Word、标题推断和全篇视觉复查有用，但首版没有可执行实现或回归测试，且与本轮合规缺口无直接关系；保留观察，不引入。 |
+
+`compliance_audit.py` 现在区分公开定位、受限获取、文内/补充材料、不适用、request-only 与缺失，
+并单列代码版本提示。它只做离线文本预筛，不解析链接、不决定分享是否合法、不证明材料完整或
+科学可复现。新增规则不改变数模成果转 SCI 定位、FORGE × TRACE、模型再验证、引用双检、旧
+S1–S8 兼容层、零静默损失或四种顶层状态。

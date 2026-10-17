@@ -72,6 +72,12 @@ Check applicability and presence of:
 
 Never invent approval IDs, consent status, funding grants, author contributions or conflict statements.
 
+For data and code statements, presence is not enough. The pre-screen classifies each statement as public with a
+concrete locator, restricted with both a reason and an access route, included at a named manuscript/supplement
+location, not applicable with a rationale, vague request-only, or missing. A bare repository name and “available
+upon reasonable request” alone do not pass. A syntactically plausible URL, DOI or accession still requires an
+author/human to verify access while logged out at submission time.
+
 ## D. Reproducibility package
 
 If data/code/supplements exist, prepare an audit-ready manifest:
@@ -85,6 +91,8 @@ If data/code/supplements exist, prepare an audit-ready manifest:
 - whether anonymization/blinding is required for review.
 
 If sharing is restricted, state the restriction truthfully and identify what the target journal requires.
+Bind public code to the release, tag, commit or archived version used for the manuscript. Do not claim “fully
+reproducible” from a link, a schema PASS or an author rerun; that wording requires a recorded independent rerun.
 
 ## Output
 

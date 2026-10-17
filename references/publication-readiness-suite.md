@@ -17,7 +17,7 @@ This suite addresses preventable submission failures that remain after ordinary 
 - methods/statistics checks for sample-size rationale, uncertainty/error bars, p-values, effect sizes, multiple testing, missing data, randomization/blinding and reproducibility;
 - optional LanguageTool diagnostics plus internal academic-register/overclaim checks;
 - optional held-out target-journal writing-pattern profile; learns only paraphrased structural/rhetorical observations, never source wording or scientific findings, and cannot override official requirements or protected scientific content;
-- ethics, consent, data availability, code availability, COI and funding checks; approval IDs are never fabricated.
+- ethics, consent, actionable data/code availability, COI and funding checks; public routes need a concrete locator and logged-out verification, restricted routes need a reason plus an access path, and approval IDs are never fabricated.
 
 ## P2 — submission hygiene
 

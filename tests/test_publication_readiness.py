@@ -75,6 +75,76 @@ def test_compliance_flags_missing_human_ethics(tmp_path):
     assert "E02" in result["blockers"]
 
 
+def test_compliance_blocks_vague_request_only_data_statement(tmp_path):
+    text = (
+        "Data availability. The data are available from the corresponding author "
+        "upon reasonable request. Funding: none. Conflict of interest: none."
+    )
+    inp = tmp_path / "paper.txt"
+    out = tmp_path / "compliance.json"
+    inp.write_text(text, encoding="utf-8")
+
+    result = compliance_run(str(inp), str(out))
+
+    assert "E03" in result["blockers"]
+    assert result["availability_statement_audit"]["data"]["status"] == "VAGUE_REQUEST_ONLY"
+
+
+def test_compliance_accepts_located_public_data_but_requires_live_access_check(tmp_path):
+    text = (
+        "Data availability. The supporting data are deposited under the synthetic "
+        "test identifier doi:10.0000/example.synthetic. Funding: none. "
+        "Conflict of interest: none."
+    )
+    inp = tmp_path / "paper.txt"
+    out = tmp_path / "compliance.json"
+    inp.write_text(text, encoding="utf-8")
+
+    result = compliance_run(str(inp), str(out))
+    data = result["availability_statement_audit"]["data"]
+
+    assert "E03" not in result["blockers"]
+    assert data["status"] == "PUBLIC_WITH_LOCATOR"
+    assert data["persistent_identifier_present"] is True
+    assert data["logged_out_access_check"] == "REQUIRED_AT_SUBMISSION"
+
+
+def test_compliance_requires_reason_and_route_for_restricted_data(tmp_path):
+    text = (
+        "Data availability. Participant-level data cannot be public because of "
+        "confidentiality. Apply through https://access.example.invalid/form; "
+        "applications are reviewed under a data use agreement. "
+        "Funding: none. Conflict of interest: none."
+    )
+    inp = tmp_path / "paper.txt"
+    out = tmp_path / "compliance.json"
+    inp.write_text(text, encoding="utf-8")
+
+    result = compliance_run(str(inp), str(out))
+    data = result["availability_statement_audit"]["data"]
+
+    assert "E03" not in result["blockers"]
+    assert data["status"] == "RESTRICTED_WITH_REASON_AND_ROUTE"
+    assert data["restriction_reason_present"] is True
+    assert data["access_route_present"] is True
+
+
+def test_compliance_flags_unlocated_code_repository_when_code_is_material(tmp_path):
+    text = (
+        "We implemented the simulation in Python. Code availability. Analysis code "
+        "is available in a repository. Data are included in the supplementary "
+        "material. Funding: none. Conflict of interest: none."
+    )
+    inp = tmp_path / "paper.txt"
+    out = tmp_path / "compliance.json"
+    inp.write_text(text, encoding="utf-8")
+
+    result = compliance_run(str(inp), str(out))
+
+    assert "R02" in result["warnings"]
+    assert result["availability_statement_audit"]["code"]["status"] == "PRESENT_WITHOUT_ROUTE"
+
+
 def test_preflight_can_reach_human_check_when_all_required_artifacts_clear(tmp_path):
     wd = tmp_path / "run"
     clear_required_artifacts(wd)
