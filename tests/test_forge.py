@@ -201,3 +201,81 @@ def test_g_gate_enforces_access_depth_for_quantitative_citation(tmp_path):
     assert not result["passed"]
     assert any("too shallow" in item for item in result["errors"])
     assert any("locator" in item for item in result["errors"])
+
+
+def test_g_gate_rejects_visual_review_after_reviewed_output_changes(tmp_path):
+    work = init_workspace(tmp_path)
+    figure = work / "04-manuscript" / "fig1.svg"
+    figure.write_text("reviewed version", encoding="utf-8")
+    reviewed_hash = forge.sha256(figure)
+    figure.write_text("changed after review", encoding="utf-8")
+
+    dump(work / "04-manuscript" / "claim-map.json", {
+        "complete": True,
+        "claims": [{
+            "claim_id": "C1", "text": "The validated model reproduces the reference case.",
+            "evidence_ids": ["R1"], "risk": "high", "status": "SUPPORTED",
+        }],
+    })
+    dump(work / "04-manuscript" / "figure-manifest.json", {
+        "complete": True,
+        "figures": [{
+            "figure_id": "F1", "claim_ids": ["C1"],
+            "source_data": ["03-revalidation/validation-results.json"],
+            "outputs": ["04-manuscript/fig1.svg"],
+            "visual_review": {
+                "reviewer": "author", "reviewed_at": "2026-10-18T12:00:00Z",
+                "output_sha256": {"04-manuscript/fig1.svg": reviewed_hash},
+            },
+        }],
+    })
+    dump(work / "04-manuscript" / "citation-audit.json", {
+        "complete": True, "blockers": [],
+        "citations": [{
+            "citation_id": "R1", "identity_status": "VERIFIED",
+            "support_status": "SUPPORTS", "sentence_tier": "background",
+            "access_level": "metadata_only", "locator": "",
+        }],
+    })
+    (work / "04-manuscript" / "manuscript.md").write_text("draft", encoding="utf-8")
+
+    result = forge.evaluate(work, "G")
+    assert not result["passed"]
+    assert any("changed after visual review" in item for item in result["errors"])
+
+
+def test_g_gate_accepts_visual_review_bound_to_current_outputs(tmp_path):
+    work = init_workspace(tmp_path)
+    figure = work / "04-manuscript" / "fig1.svg"
+    figure.write_text("reviewed version", encoding="utf-8")
+    dump(work / "04-manuscript" / "claim-map.json", {
+        "complete": True,
+        "claims": [{
+            "claim_id": "C1", "text": "The validated model reproduces the reference case.",
+            "evidence_ids": ["R1"], "risk": "high", "status": "SUPPORTED",
+        }],
+    })
+    dump(work / "04-manuscript" / "figure-manifest.json", {
+        "complete": True,
+        "figures": [{
+            "figure_id": "F1", "claim_ids": ["C1"],
+            "source_data": ["03-revalidation/validation-results.json"],
+            "outputs": ["04-manuscript/fig1.svg"],
+            "visual_review": {
+                "reviewer": "author", "reviewed_at": "2026-10-18T12:00:00Z",
+                "output_sha256": {"04-manuscript/fig1.svg": forge.sha256(figure)},
+            },
+        }],
+    })
+    dump(work / "04-manuscript" / "citation-audit.json", {
+        "complete": True, "blockers": [],
+        "citations": [{
+            "citation_id": "R1", "identity_status": "VERIFIED",
+            "support_status": "SUPPORTS", "sentence_tier": "background",
+            "access_level": "metadata_only", "locator": "",
+        }],
+    })
+    (work / "04-manuscript" / "manuscript.md").write_text("draft", encoding="utf-8")
+
+    result = forge.evaluate(work, "G")
+    assert result["passed"], result

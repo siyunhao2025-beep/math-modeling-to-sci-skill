@@ -63,6 +63,12 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def is_sha256(value: object) -> bool:
+    return (isinstance(value, str) and len(value) == 64
+            and value == value.lower()
+            and all(char in "0123456789abcdef" for char in value))
+
+
 def write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
@@ -371,8 +377,47 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
         if not fig.get("figure_id") or not fig.get("claim_ids") or not fig.get("source_data"):
             errors.append("each figure needs figure_id, claim_ids and source_data")
         review = fig.get("visual_review") or {}
+        if not isinstance(review, dict):
+            errors.append(f"figure {fig.get('figure_id')!r} visual_review must be an object")
+            review = {}
         if not review.get("reviewer") or not review.get("reviewed_at"):
             errors.append(f"figure {fig.get('figure_id')!r} lacks signed visual_review")
+        outputs = fig.get("outputs") or []
+        if not isinstance(outputs, list) or not outputs:
+            errors.append(f"figure {fig.get('figure_id')!r} needs current output files")
+            outputs = []
+        output_hashes = review.get("output_sha256")
+        if not isinstance(output_hashes, dict):
+            errors.append(
+                f"figure {fig.get('figure_id')!r} visual_review needs output_sha256 bindings"
+            )
+            output_hashes = {}
+        declared_outputs: set[str] = set()
+        for rel in outputs:
+            if not isinstance(rel, str) or not rel.strip():
+                errors.append(f"figure {fig.get('figure_id')!r} has an invalid output path")
+                continue
+            declared_outputs.add(rel)
+            path = root / rel
+            if not inside(root, path) or not path.is_file():
+                errors.append(f"figure {fig.get('figure_id')!r} output missing or unsafe: {rel}")
+                continue
+            expected = output_hashes.get(rel)
+            if not is_sha256(expected):
+                errors.append(
+                    f"figure {fig.get('figure_id')!r} output {rel!r} lacks a lowercase SHA-256 "
+                    "from the visual review"
+                )
+            elif expected != sha256(path):
+                errors.append(
+                    f"figure {fig.get('figure_id')!r} output {rel!r} changed after visual review"
+                )
+        extras = sorted(str(key) for key in output_hashes if key not in declared_outputs)
+        if extras:
+            warnings.append(
+                f"figure {fig.get('figure_id')!r} visual_review has hashes for undeclared outputs: "
+                + ", ".join(extras)
+            )
 
     citations = load_required(root, "04-manuscript/citation-audit.json", errors)
     if citations.get("complete") is not True:
