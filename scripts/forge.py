@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -49,6 +50,7 @@ MANUSCRIPT_NAMES = ("manuscript.md", "manuscript.tex", "manuscript.docx")
 READY = "READY_FOR_HUMAN_SUBMISSION_CHECK"
 ACCESS_RANK = {"metadata_only": 0, "abstract_only": 1, "full_text": 2, "project_result": 3}
 MIN_ACCESS = {"background": 0, "method": 1, "quantitative": 2, "causal": 2, "mechanistic": 2}
+FINAL_SIZE_TOLERANCE_MM = 0.1
 
 
 def now() -> str:
@@ -67,6 +69,11 @@ def is_sha256(value: object) -> bool:
     return (isinstance(value, str) and len(value) == 64
             and value == value.lower()
             and all(char in "0123456789abcdef" for char in value))
+
+
+def is_positive_number(value: object) -> bool:
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(float(value)) and value > 0)
 
 
 def write_json(path: Path, payload: object) -> None:
@@ -382,6 +389,23 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
             review = {}
         if not review.get("reviewer") or not review.get("reviewed_at"):
             errors.append(f"figure {fig.get('figure_id')!r} lacks signed visual_review")
+        target_width = fig.get("target_width_mm")
+        reviewed_width = review.get("reviewed_width_mm")
+        if not is_positive_number(target_width):
+            errors.append(
+                f"figure {fig.get('figure_id')!r} needs a positive target_width_mm"
+            )
+        if not is_positive_number(reviewed_width):
+            errors.append(
+                f"figure {fig.get('figure_id')!r} visual_review needs a positive "
+                "reviewed_width_mm"
+            )
+        elif (is_positive_number(target_width)
+              and abs(float(reviewed_width) - float(target_width)) > FINAL_SIZE_TOLERANCE_MM):
+            errors.append(
+                f"figure {fig.get('figure_id')!r} reviewed_width_mm={reviewed_width} does not "
+                f"match target_width_mm={target_width} within {FINAL_SIZE_TOLERANCE_MM} mm"
+            )
         outputs = fig.get("outputs") or []
         if not isinstance(outputs, list) or not outputs:
             errors.append(f"figure {fig.get('figure_id')!r} needs current output files")

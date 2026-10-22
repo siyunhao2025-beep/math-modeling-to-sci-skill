@@ -222,9 +222,11 @@ def test_g_gate_rejects_visual_review_after_reviewed_output_changes(tmp_path):
         "figures": [{
             "figure_id": "F1", "claim_ids": ["C1"],
             "source_data": ["03-revalidation/validation-results.json"],
+            "target_width_mm": 85.0,
             "outputs": ["04-manuscript/fig1.svg"],
             "visual_review": {
                 "reviewer": "author", "reviewed_at": "2026-10-18T12:00:00Z",
+                "reviewed_width_mm": 85.0,
                 "output_sha256": {"04-manuscript/fig1.svg": reviewed_hash},
             },
         }],
@@ -260,9 +262,11 @@ def test_g_gate_accepts_visual_review_bound_to_current_outputs(tmp_path):
         "figures": [{
             "figure_id": "F1", "claim_ids": ["C1"],
             "source_data": ["03-revalidation/validation-results.json"],
+            "target_width_mm": 85.0,
             "outputs": ["04-manuscript/fig1.svg"],
             "visual_review": {
                 "reviewer": "author", "reviewed_at": "2026-10-18T12:00:00Z",
+                "reviewed_width_mm": 85.0,
                 "output_sha256": {"04-manuscript/fig1.svg": forge.sha256(figure)},
             },
         }],
@@ -279,3 +283,44 @@ def test_g_gate_accepts_visual_review_bound_to_current_outputs(tmp_path):
 
     result = forge.evaluate(work, "G")
     assert result["passed"], result
+
+
+def test_g_gate_rejects_visual_review_at_wrong_final_width(tmp_path):
+    work = init_workspace(tmp_path)
+    figure = work / "04-manuscript" / "fig1.svg"
+    figure.write_text("reviewed version", encoding="utf-8")
+    dump(work / "04-manuscript" / "claim-map.json", {
+        "complete": True,
+        "claims": [{
+            "claim_id": "C1", "text": "The validated model reproduces the reference case.",
+            "evidence_ids": ["R1"], "risk": "high", "status": "SUPPORTED",
+        }],
+    })
+    dump(work / "04-manuscript" / "figure-manifest.json", {
+        "complete": True,
+        "figures": [{
+            "figure_id": "F1", "claim_ids": ["C1"],
+            "source_data": ["03-revalidation/validation-results.json"],
+            "target_width_mm": 85.0,
+            "outputs": ["04-manuscript/fig1.svg"],
+            "visual_review": {
+                "reviewer": "author", "reviewed_at": "2026-10-22T12:00:00Z",
+                "reviewed_width_mm": 178.0,
+                "output_sha256": {"04-manuscript/fig1.svg": forge.sha256(figure)},
+            },
+        }],
+    })
+    dump(work / "04-manuscript" / "citation-audit.json", {
+        "complete": True, "blockers": [],
+        "citations": [{
+            "citation_id": "R1", "identity_status": "VERIFIED",
+            "support_status": "SUPPORTS", "sentence_tier": "background",
+            "access_level": "metadata_only", "locator": "",
+        }],
+    })
+    (work / "04-manuscript" / "manuscript.md").write_text("draft", encoding="utf-8")
+
+    result = forge.evaluate(work, "G")
+    assert not result["passed"]
+    assert any("reviewed_width_mm" in item and "target_width_mm" in item
+               for item in result["errors"])
