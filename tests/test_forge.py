@@ -33,6 +33,15 @@ def init_workspace(tmp_path: Path) -> Path:
     return work
 
 
+def verification(required="source_bound", reached=None, locator="R1") -> dict:
+    return {
+        "required_depth": required,
+        "reached_depth": reached or required,
+        "checked_at": "2026-11-14T10:00:00+08:00",
+        "evidence_locator": locator,
+    }
+
+
 def complete_f(work: Path) -> None:
     dump(work / "01-forensics" / "asset-inventory.json", {
         "schema_version": "2.0",
@@ -183,6 +192,7 @@ def test_g_gate_enforces_access_depth_for_quantitative_citation(tmp_path):
         "claims": [{
             "claim_id": "C1", "text": "The metric increased by 18%.",
             "evidence_ids": ["R1"], "risk": "high", "status": "SUPPORTED",
+            "verification": verification(),
         }],
     })
     dump(work / "04-manuscript" / "figure-manifest.json", {
@@ -215,6 +225,7 @@ def test_g_gate_rejects_visual_review_after_reviewed_output_changes(tmp_path):
         "claims": [{
             "claim_id": "C1", "text": "The validated model reproduces the reference case.",
             "evidence_ids": ["R1"], "risk": "high", "status": "SUPPORTED",
+            "verification": verification("execution_bound", locator="03-revalidation/run-log.json#R1"),
         }],
     })
     dump(work / "04-manuscript" / "figure-manifest.json", {
@@ -255,6 +266,7 @@ def test_g_gate_accepts_visual_review_bound_to_current_outputs(tmp_path):
         "claims": [{
             "claim_id": "C1", "text": "The validated model reproduces the reference case.",
             "evidence_ids": ["R1"], "risk": "high", "status": "SUPPORTED",
+            "verification": verification("execution_bound", locator="03-revalidation/run-log.json#R1"),
         }],
     })
     dump(work / "04-manuscript" / "figure-manifest.json", {
@@ -285,6 +297,90 @@ def test_g_gate_accepts_visual_review_bound_to_current_outputs(tmp_path):
     assert result["passed"], result
 
 
+def test_g_gate_rejects_supported_claim_without_verification_depth(tmp_path):
+    work = init_workspace(tmp_path)
+    figure = work / "04-manuscript" / "fig1.svg"
+    figure.write_text("reviewed version", encoding="utf-8")
+    dump(work / "04-manuscript" / "claim-map.json", {
+        "complete": True,
+        "claims": [{
+            "claim_id": "C1", "text": "The validated model reproduces the reference case.",
+            "evidence_ids": ["R1"], "risk": "high", "status": "SUPPORTED",
+        }],
+    })
+    dump(work / "04-manuscript" / "figure-manifest.json", {
+        "complete": True,
+        "figures": [{
+            "figure_id": "F1", "claim_ids": ["C1"],
+            "source_data": ["03-revalidation/validation-results.json"],
+            "target_width_mm": 85.0,
+            "outputs": ["04-manuscript/fig1.svg"],
+            "visual_review": {
+                "reviewer": "author", "reviewed_at": "2026-11-14T10:00:00+08:00",
+                "reviewed_width_mm": 85.0,
+                "output_sha256": {"04-manuscript/fig1.svg": forge.sha256(figure)},
+            },
+        }],
+    })
+    dump(work / "04-manuscript" / "citation-audit.json", {
+        "complete": True, "blockers": [],
+        "citations": [{
+            "citation_id": "R1", "identity_status": "VERIFIED",
+            "support_status": "SUPPORTS", "sentence_tier": "background",
+            "access_level": "metadata_only", "locator": "",
+        }],
+    })
+    (work / "04-manuscript" / "manuscript.md").write_text("draft", encoding="utf-8")
+
+    result = forge.evaluate(work, "G")
+    assert not result["passed"]
+    assert any("verification" in item and "required_depth" in item
+               for item in result["errors"])
+
+
+def test_g_gate_rejects_verification_depth_below_required(tmp_path):
+    work = init_workspace(tmp_path)
+    figure = work / "04-manuscript" / "fig1.svg"
+    figure.write_text("reviewed version", encoding="utf-8")
+    dump(work / "04-manuscript" / "claim-map.json", {
+        "complete": True,
+        "claims": [{
+            "claim_id": "C1", "text": "The validated model reproduces the reference case.",
+            "evidence_ids": ["R1"], "risk": "high", "status": "SUPPORTED",
+            "verification": verification(
+                "execution_bound", reached="source_bound", locator="03-revalidation/run-log.json#R1"
+            ),
+        }],
+    })
+    dump(work / "04-manuscript" / "figure-manifest.json", {
+        "complete": True,
+        "figures": [{
+            "figure_id": "F1", "claim_ids": ["C1"],
+            "source_data": ["03-revalidation/validation-results.json"],
+            "target_width_mm": 85.0,
+            "outputs": ["04-manuscript/fig1.svg"],
+            "visual_review": {
+                "reviewer": "author", "reviewed_at": "2026-11-14T10:00:00+08:00",
+                "reviewed_width_mm": 85.0,
+                "output_sha256": {"04-manuscript/fig1.svg": forge.sha256(figure)},
+            },
+        }],
+    })
+    dump(work / "04-manuscript" / "citation-audit.json", {
+        "complete": True, "blockers": [],
+        "citations": [{
+            "citation_id": "R1", "identity_status": "VERIFIED",
+            "support_status": "SUPPORTS", "sentence_tier": "background",
+            "access_level": "metadata_only", "locator": "",
+        }],
+    })
+    (work / "04-manuscript" / "manuscript.md").write_text("draft", encoding="utf-8")
+
+    result = forge.evaluate(work, "G")
+    assert not result["passed"]
+    assert any("below required_depth" in item for item in result["errors"])
+
+
 def test_g_gate_rejects_visual_review_at_wrong_final_width(tmp_path):
     work = init_workspace(tmp_path)
     figure = work / "04-manuscript" / "fig1.svg"
@@ -294,6 +390,7 @@ def test_g_gate_rejects_visual_review_at_wrong_final_width(tmp_path):
         "claims": [{
             "claim_id": "C1", "text": "The validated model reproduces the reference case.",
             "evidence_ids": ["R1"], "risk": "high", "status": "SUPPORTED",
+            "verification": verification("execution_bound", locator="03-revalidation/run-log.json#R1"),
         }],
     })
     dump(work / "04-manuscript" / "figure-manifest.json", {

@@ -51,6 +51,8 @@ READY = "READY_FOR_HUMAN_SUBMISSION_CHECK"
 ACCESS_RANK = {"metadata_only": 0, "abstract_only": 1, "full_text": 2, "project_result": 3}
 MIN_ACCESS = {"background": 0, "method": 1, "quantitative": 2, "causal": 2, "mechanistic": 2}
 FINAL_SIZE_TOLERANCE_MM = 0.1
+VERIFICATION_DEPTHS = ("text_bound", "source_bound", "execution_bound", "render_bound")
+VERIFICATION_RANK = {name: rank for rank, name in enumerate(VERIFICATION_DEPTHS)}
 
 
 def now() -> str:
@@ -367,12 +369,37 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
     if not items:
         errors.append("claim map contains no claims")
     for item in items:
+        claim_id = item.get("claim_id")
         if not item.get("claim_id") or not item.get("text") or not item.get("evidence_ids"):
             errors.append("every claim needs claim_id, text and evidence_ids")
         if item.get("risk") == "high" and item.get("status") != "SUPPORTED":
-            errors.append(f"high-risk claim {item.get('claim_id')!r} is not SUPPORTED")
+            errors.append(f"high-risk claim {claim_id!r} is not SUPPORTED")
         elif item.get("status") in {"UNSUPPORTED", "CONTRADICTED", "PENDING", None}:
-            errors.append(f"claim {item.get('claim_id')!r} has blocking status {item.get('status')!r}")
+            errors.append(f"claim {claim_id!r} has blocking status {item.get('status')!r}")
+
+        verification = item.get("verification")
+        if not isinstance(verification, dict):
+            errors.append(
+                f"claim {claim_id!r} verification needs required_depth, reached_depth, "
+                "checked_at and evidence_locator"
+            )
+            continue
+        required = verification.get("required_depth")
+        reached = verification.get("reached_depth")
+        if required not in VERIFICATION_RANK:
+            errors.append(f"claim {claim_id!r} has invalid verification required_depth {required!r}")
+        if reached not in VERIFICATION_RANK:
+            errors.append(f"claim {claim_id!r} has invalid verification reached_depth {reached!r}")
+        if (required in VERIFICATION_RANK and reached in VERIFICATION_RANK
+                and VERIFICATION_RANK[reached] < VERIFICATION_RANK[required]):
+            errors.append(
+                f"claim {claim_id!r} verification reached_depth {reached!r} is below "
+                f"required_depth {required!r}"
+            )
+        if not verification.get("checked_at") or not verification.get("evidence_locator"):
+            errors.append(
+                f"claim {claim_id!r} verification needs checked_at and evidence_locator"
+            )
 
     figures = load_required(root, "04-manuscript/figure-manifest.json", errors)
     if figures.get("complete") is not True:
