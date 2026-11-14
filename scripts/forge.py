@@ -53,6 +53,7 @@ MIN_ACCESS = {"background": 0, "method": 1, "quantitative": 2, "causal": 2, "mec
 FINAL_SIZE_TOLERANCE_MM = 0.1
 VERIFICATION_DEPTHS = ("text_bound", "source_bound", "execution_bound", "render_bound")
 VERIFICATION_RANK = {name: rank for rank, name in enumerate(VERIFICATION_DEPTHS)}
+MIN_GATE_G_VERIFICATION = "source_bound"
 
 
 def now() -> str:
@@ -388,6 +389,11 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
         reached = verification.get("reached_depth")
         if required not in VERIFICATION_RANK:
             errors.append(f"claim {claim_id!r} has invalid verification required_depth {required!r}")
+        elif VERIFICATION_RANK[required] < VERIFICATION_RANK[MIN_GATE_G_VERIFICATION]:
+            errors.append(
+                f"claim {claim_id!r} verification required_depth {required!r} is below "
+                f"Gate G minimum {MIN_GATE_G_VERIFICATION!r}"
+            )
         if reached not in VERIFICATION_RANK:
             errors.append(f"claim {claim_id!r} has invalid verification reached_depth {reached!r}")
         if (required in VERIFICATION_RANK and reached in VERIFICATION_RANK

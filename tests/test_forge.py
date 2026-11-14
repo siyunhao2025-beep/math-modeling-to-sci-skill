@@ -338,7 +338,7 @@ def test_g_gate_rejects_supported_claim_without_verification_depth(tmp_path):
                for item in result["errors"])
 
 
-def test_g_gate_rejects_verification_depth_below_required(tmp_path):
+def test_g_gate_rejects_shallow_or_under_reached_verification(tmp_path):
     work = init_workspace(tmp_path)
     figure = work / "04-manuscript" / "fig1.svg"
     figure.write_text("reviewed version", encoding="utf-8")
@@ -379,6 +379,16 @@ def test_g_gate_rejects_verification_depth_below_required(tmp_path):
     result = forge.evaluate(work, "G")
     assert not result["passed"]
     assert any("below required_depth" in item for item in result["errors"])
+
+    claim_map = json.loads((work / "04-manuscript" / "claim-map.json").read_text(encoding="utf-8"))
+    claim_map["claims"][0]["verification"] = verification(
+        "text_bound", reached="text_bound", locator="04-manuscript/manuscript.md#results"
+    )
+    dump(work / "04-manuscript" / "claim-map.json", claim_map)
+
+    result = forge.evaluate(work, "G")
+    assert not result["passed"]
+    assert any("Gate G minimum 'source_bound'" in item for item in result["errors"])
 
 
 def test_g_gate_rejects_visual_review_at_wrong_final_width(tmp_path):
