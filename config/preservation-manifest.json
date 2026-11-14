@@ -3,8 +3,8 @@
   "baseline_commit": null,
   "extension_baseline_commit": null,
   "skill_contract": {
-    "bytes": 10839,
-    "sha256": "a76bca933478f6116269edc3e7e00c5e8e0b03c6ed126e40a492e336813d8ad6"
+    "bytes": 11062,
+    "sha256": "b9e85fb6152311ac0628f42d4ed70458d46c4b2e66749c5455c5e2ea729e18e8"
   },
   "purpose": "Distribution regression guard for the reviewed FORGE v2 entry point and required capability paths. This is not a cryptographic security or anti-tamper guarantee.",
   "policy": {

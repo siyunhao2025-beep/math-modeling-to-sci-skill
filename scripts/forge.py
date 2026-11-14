@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -49,6 +50,10 @@ MANUSCRIPT_NAMES = ("manuscript.md", "manuscript.tex", "manuscript.docx")
 READY = "READY_FOR_HUMAN_SUBMISSION_CHECK"
 ACCESS_RANK = {"metadata_only": 0, "abstract_only": 1, "full_text": 2, "project_result": 3}
 MIN_ACCESS = {"background": 0, "method": 1, "quantitative": 2, "causal": 2, "mechanistic": 2}
+FINAL_SIZE_TOLERANCE_MM = 0.1
+VERIFICATION_DEPTHS = ("text_bound", "source_bound", "execution_bound", "render_bound")
+VERIFICATION_RANK = {name: rank for rank, name in enumerate(VERIFICATION_DEPTHS)}
+MIN_GATE_G_VERIFICATION = "source_bound"
 
 
 def now() -> str:
@@ -61,6 +66,17 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def is_sha256(value: object) -> bool:
+    return (isinstance(value, str) and len(value) == 64
+            and value == value.lower()
+            and all(char in "0123456789abcdef" for char in value))
+
+
+def is_positive_number(value: object) -> bool:
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(float(value)) and value > 0)
 
 
 def write_json(path: Path, payload: object) -> None:
@@ -354,12 +370,42 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
     if not items:
         errors.append("claim map contains no claims")
     for item in items:
+        claim_id = item.get("claim_id")
         if not item.get("claim_id") or not item.get("text") or not item.get("evidence_ids"):
             errors.append("every claim needs claim_id, text and evidence_ids")
         if item.get("risk") == "high" and item.get("status") != "SUPPORTED":
-            errors.append(f"high-risk claim {item.get('claim_id')!r} is not SUPPORTED")
+            errors.append(f"high-risk claim {claim_id!r} is not SUPPORTED")
         elif item.get("status") in {"UNSUPPORTED", "CONTRADICTED", "PENDING", None}:
-            errors.append(f"claim {item.get('claim_id')!r} has blocking status {item.get('status')!r}")
+            errors.append(f"claim {claim_id!r} has blocking status {item.get('status')!r}")
+
+        verification = item.get("verification")
+        if not isinstance(verification, dict):
+            errors.append(
+                f"claim {claim_id!r} verification needs required_depth, reached_depth, "
+                "checked_at and evidence_locator"
+            )
+            continue
+        required = verification.get("required_depth")
+        reached = verification.get("reached_depth")
+        if required not in VERIFICATION_RANK:
+            errors.append(f"claim {claim_id!r} has invalid verification required_depth {required!r}")
+        elif VERIFICATION_RANK[required] < VERIFICATION_RANK[MIN_GATE_G_VERIFICATION]:
+            errors.append(
+                f"claim {claim_id!r} verification required_depth {required!r} is below "
+                f"Gate G minimum {MIN_GATE_G_VERIFICATION!r}"
+            )
+        if reached not in VERIFICATION_RANK:
+            errors.append(f"claim {claim_id!r} has invalid verification reached_depth {reached!r}")
+        if (required in VERIFICATION_RANK and reached in VERIFICATION_RANK
+                and VERIFICATION_RANK[reached] < VERIFICATION_RANK[required]):
+            errors.append(
+                f"claim {claim_id!r} verification reached_depth {reached!r} is below "
+                f"required_depth {required!r}"
+            )
+        if not verification.get("checked_at") or not verification.get("evidence_locator"):
+            errors.append(
+                f"claim {claim_id!r} verification needs checked_at and evidence_locator"
+            )
 
     figures = load_required(root, "04-manuscript/figure-manifest.json", errors)
     if figures.get("complete") is not True:
@@ -371,8 +417,64 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
         if not fig.get("figure_id") or not fig.get("claim_ids") or not fig.get("source_data"):
             errors.append("each figure needs figure_id, claim_ids and source_data")
         review = fig.get("visual_review") or {}
+        if not isinstance(review, dict):
+            errors.append(f"figure {fig.get('figure_id')!r} visual_review must be an object")
+            review = {}
         if not review.get("reviewer") or not review.get("reviewed_at"):
             errors.append(f"figure {fig.get('figure_id')!r} lacks signed visual_review")
+        target_width = fig.get("target_width_mm")
+        reviewed_width = review.get("reviewed_width_mm")
+        if not is_positive_number(target_width):
+            errors.append(
+                f"figure {fig.get('figure_id')!r} needs a positive target_width_mm"
+            )
+        if not is_positive_number(reviewed_width):
+            errors.append(
+                f"figure {fig.get('figure_id')!r} visual_review needs a positive "
+                "reviewed_width_mm"
+            )
+        elif (is_positive_number(target_width)
+              and abs(float(reviewed_width) - float(target_width)) > FINAL_SIZE_TOLERANCE_MM):
+            errors.append(
+                f"figure {fig.get('figure_id')!r} reviewed_width_mm={reviewed_width} does not "
+                f"match target_width_mm={target_width} within {FINAL_SIZE_TOLERANCE_MM} mm"
+            )
+        outputs = fig.get("outputs") or []
+        if not isinstance(outputs, list) or not outputs:
+            errors.append(f"figure {fig.get('figure_id')!r} needs current output files")
+            outputs = []
+        output_hashes = review.get("output_sha256")
+        if not isinstance(output_hashes, dict):
+            errors.append(
+                f"figure {fig.get('figure_id')!r} visual_review needs output_sha256 bindings"
+            )
+            output_hashes = {}
+        declared_outputs: set[str] = set()
+        for rel in outputs:
+            if not isinstance(rel, str) or not rel.strip():
+                errors.append(f"figure {fig.get('figure_id')!r} has an invalid output path")
+                continue
+            declared_outputs.add(rel)
+            path = root / rel
+            if not inside(root, path) or not path.is_file():
+                errors.append(f"figure {fig.get('figure_id')!r} output missing or unsafe: {rel}")
+                continue
+            expected = output_hashes.get(rel)
+            if not is_sha256(expected):
+                errors.append(
+                    f"figure {fig.get('figure_id')!r} output {rel!r} lacks a lowercase SHA-256 "
+                    "from the visual review"
+                )
+            elif expected != sha256(path):
+                errors.append(
+                    f"figure {fig.get('figure_id')!r} output {rel!r} changed after visual review"
+                )
+        extras = sorted(str(key) for key in output_hashes if key not in declared_outputs)
+        if extras:
+            warnings.append(
+                f"figure {fig.get('figure_id')!r} visual_review has hashes for undeclared outputs: "
+                + ", ".join(extras)
+            )
 
     citations = load_required(root, "04-manuscript/citation-audit.json", errors)
     if citations.get("complete") is not True:
