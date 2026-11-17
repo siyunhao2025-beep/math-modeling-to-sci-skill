@@ -71,6 +71,42 @@ def _payload() -> dict:
     }
 
 
+def _payload_with_training_comparison() -> dict:
+    payload = _payload()
+    baseline_run = copy.deepcopy(payload["runs"][0])
+    baseline_run["run_id"] = "run-baseline"
+    baseline_run["command"] = "python analysis/run.py --config baseline.json"
+    payload["runs"].append(baseline_run)
+
+    baseline_value = copy.deepcopy(payload["values"][0])
+    baseline_value["value_id"] = "v-baseline"
+    baseline_value["run_id"] = "run-baseline"
+    baseline_value["reported_text"] = "82.90%"
+    baseline_value["comparison"]["computed_in_reported_unit"] = "82.90"
+    baseline_value["comparison"]["lower"] = "82.895"
+    baseline_value["comparison"]["upper"] = "82.905"
+    payload["values"].append(baseline_value)
+
+    payload["training_comparisons"] = [
+        {
+            "comparison_id": "train-cmp-1",
+            "candidate_value_id": "v-mean",
+            "baseline_value_id": "v-baseline",
+            "metric_name": "held-out top-1 accuracy",
+            "metric_role": "TARGET",
+            "progress_unit": "epoch",
+            "candidate_progress": "11",
+            "baseline_progress": "11",
+            "alignment_method": "EXACT",
+            "claim_scope": "CURRENT_PROGRESS",
+            "candidate_final": False,
+            "baseline_final": False,
+            "winner_claimed": False,
+        }
+    ]
+    return payload
+
+
 def test_matching_value_with_run_and_input_provenance_passes():
     result = result_trace.audit_ledger(_payload())
     assert result["verdict"] == "PASS"
@@ -212,3 +248,71 @@ def test_duplicate_value_ids_are_rejected():
     result = result_trace.audit_ledger(payload)
     assert result["verdict"] == "BLOCKED"
     assert any("duplicate value_id" in item for item in result["errors"])
+
+
+def test_current_training_comparison_requires_same_progress():
+    payload = _payload_with_training_comparison()
+    payload["training_comparisons"][0]["baseline_progress"] = "100"
+
+    result = result_trace.audit_ledger(payload)
+
+    assert result["verdict"] == "BLOCKED"
+    assert any("same progress" in item for item in result["errors"])
+
+
+def test_proxy_metric_cannot_support_a_final_winner_claim():
+    payload = _payload_with_training_comparison()
+    comparison = payload["training_comparisons"][0]
+    comparison.update(
+        {
+            "metric_role": "PROXY",
+            "target_metric_status": "PENDING",
+            "claim_scope": "FINAL_PERFORMANCE",
+            "alignment_method": "FINAL_PROTOCOL",
+            "candidate_final": True,
+            "baseline_final": True,
+            "budget_or_stopping_rule_comparable": True,
+            "winner_claimed": True,
+        }
+    )
+
+    result = result_trace.audit_ledger(payload)
+
+    assert result["verdict"] == "BLOCKED"
+    assert any("proxy metric" in item for item in result["errors"])
+
+
+def test_nearest_progress_alignment_discloses_approximation():
+    payload = _payload_with_training_comparison()
+    comparison = payload["training_comparisons"][0]
+    comparison["alignment_method"] = "NEAREST"
+    comparison["baseline_progress"] = "10"
+
+    result = result_trace.audit_ledger(payload)
+
+    assert result["verdict"] == "BLOCKED"
+    assert any("alignment_note" in item for item in result["errors"])
+
+    comparison["alignment_note"] = "Baseline was logged every two epochs; epoch 10 is nearest."
+    comparison["alignment_uncertainty_disclosed"] = True
+    assert result_trace.audit_ledger(payload)["verdict"] == "PASS"
+
+
+def test_final_target_comparison_requires_completed_comparable_protocols():
+    payload = _payload_with_training_comparison()
+    comparison = payload["training_comparisons"][0]
+    comparison.update(
+        {
+            "claim_scope": "FINAL_PERFORMANCE",
+            "alignment_method": "FINAL_PROTOCOL",
+            "candidate_final": True,
+            "baseline_final": True,
+            "budget_or_stopping_rule_comparable": True,
+            "winner_claimed": True,
+        }
+    )
+
+    result = result_trace.audit_ledger(payload)
+
+    assert result["verdict"] == "PASS"
+    assert result["training_comparison_count"] == 1

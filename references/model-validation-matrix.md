@@ -212,6 +212,19 @@
 - `MISMATCH`：同一规则下不相符，保留不利结果并登记作者处置，不得静默改数；
 - `UNVERIFIABLE`：缺少 producing run、输入或可复核比较，必须说明原因并阻断发布。
 
+若稿件比较来自训练轨迹，还要在同一账本增加 `training_comparisons`。每条记录引用两个已经
+`MATCH` 的 `scientific_result` 数值，并写明 `metric_name`、`metric_role`（`PROXY / TARGET`）、
+进度单位与双方进度、对齐方法、主张范围、双方是否已完成最终训练，以及是否声称最终胜出。
+候选与基线必须来自不同运行，并使用同一报告单位。
+
+- `CURRENT_PROGRESS` 只说明当前训练位置。`EXACT` 必须在同一 epoch、update 或已登记预算点；
+  `NEAREST / INTERPOLATED` 必须解释近似并披露对齐不确定性。当前进度证据不得升级为最终胜负。
+- `FINAL_PERFORMANCE` 必须使用 `FINAL_PROTOCOL`，双方均已完成预定训练，并确认预算或停止规则
+  可比；只有 `TARGET` 指标可以支撑最终性能比较。
+- `PROXY` 指标须记录目标指标当前为 `AVAILABLE / PENDING / NOT_APPLICABLE`，只能描述收敛或
+  训练状态，不能单独支撑最终胜出主张。缺少最终目标评估时，应保留 `PENDING`，不得用代理指标
+  代替论文实际优化目标。
+
 比较值必须显式写成 `computed_in_reported_unit`。审计器不猜单位换算、不推断有效位数，也不从
 稿件显示形式倒推容差。值恰好落在区间端点或谓词阈值时，必须记录
 `boundary_case_disclosed: true`，防止开闭边界被悄悄改变。运行：

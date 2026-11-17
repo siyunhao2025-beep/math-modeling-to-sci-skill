@@ -24,6 +24,10 @@ CLASSIFICATIONS = {"MATCH", "MISMATCH", "UNVERIFIABLE"}
 LOCK_BASES = {"version_control_commit", "external_registration", "immutable_record"}
 RUN_PURPOSES = {"SCIENTIFIC_EVIDENCE", "PIPELINE_SMOKE", "RESOURCE_CALIBRATION"}
 CLAIM_ROLES = {"scientific_result", "pipeline_function", "resource_cost"}
+METRIC_ROLES = {"PROXY", "TARGET"}
+TARGET_METRIC_STATUSES = {"AVAILABLE", "PENDING", "NOT_APPLICABLE"}
+TRAINING_CLAIM_SCOPES = {"CURRENT_PROGRESS", "FINAL_PERFORMANCE"}
+ALIGNMENT_METHODS = {"EXACT", "NEAREST", "INTERPOLATED", "FINAL_PROTOCOL"}
 ROLE_PURPOSES = {
     "scientific_result": {"SCIENTIFIC_EVIDENCE"},
     "pipeline_function": {"SCIENTIFIC_EVIDENCE", "PIPELINE_SMOKE"},
@@ -93,6 +97,7 @@ def _invalid_result(message: str) -> dict:
     return {
         "verdict": "BLOCKED",
         "counts": {"MATCH": 0, "MISMATCH": 0, "UNVERIFIABLE": 0},
+        "training_comparison_count": 0,
         "errors": [message],
         "scope": "declared_manuscript_values_to_recorded_runs",
         "scientific_correctness_implied": False,
@@ -102,6 +107,160 @@ def _invalid_result(message: str) -> dict:
             "establish model validity or scientific correctness."
         ),
     }
+
+
+def _audit_training_comparisons(
+    payload: dict,
+    value_index: dict[str, dict],
+    errors: list[str],
+) -> int:
+    """Validate optional progress-aligned comparisons between recorded values."""
+    if "training_comparisons" not in payload:
+        return 0
+    comparisons = payload.get("training_comparisons")
+    if not isinstance(comparisons, list) or not comparisons:
+        errors.append("training_comparisons must be a non-empty array when present")
+        return 0
+
+    comparison_ids: set[str] = set()
+    for index, comparison in enumerate(comparisons):
+        label = f"training_comparisons[{index}]"
+        if not isinstance(comparison, dict):
+            errors.append(f"{label} must be an object")
+            continue
+        comparison_id = comparison.get("comparison_id")
+        if not _text(comparison_id):
+            errors.append(f"{label}.comparison_id must be a non-empty string")
+            comparison_id = label
+        elif comparison_id in comparison_ids:
+            errors.append(f"duplicate training comparison_id: {comparison_id}")
+        comparison_ids.add(comparison_id)
+
+        candidate = value_index.get(comparison.get("candidate_value_id"))
+        baseline = value_index.get(comparison.get("baseline_value_id"))
+        if candidate is None:
+            errors.append(f"training comparison {comparison_id} has unknown candidate_value_id")
+        if baseline is None:
+            errors.append(f"training comparison {comparison_id} has unknown baseline_value_id")
+        if candidate is not None and baseline is not None:
+            for role, value in (("candidate", candidate), ("baseline", baseline)):
+                if value.get("classification") != "MATCH":
+                    errors.append(
+                        f"training comparison {comparison_id} {role} value must be MATCH"
+                    )
+                if value.get("claim_role") != "scientific_result":
+                    errors.append(
+                        f"training comparison {comparison_id} {role} must be a scientific_result"
+                    )
+            if candidate.get("run_id") == baseline.get("run_id"):
+                errors.append(
+                    f"training comparison {comparison_id} needs distinct candidate and baseline runs"
+                )
+            if candidate.get("reported_unit") != baseline.get("reported_unit"):
+                errors.append(
+                    f"training comparison {comparison_id} values must use the same reported_unit"
+                )
+
+        if not _text(comparison.get("metric_name")):
+            errors.append(f"training comparison {comparison_id} needs a metric_name")
+        metric_role = comparison.get("metric_role")
+        if metric_role not in METRIC_ROLES:
+            errors.append(
+                f"training comparison {comparison_id} metric_role must be one of "
+                f"{sorted(METRIC_ROLES)}"
+            )
+        if metric_role == "PROXY" and comparison.get("target_metric_status") not in TARGET_METRIC_STATUSES:
+            errors.append(
+                f"training comparison {comparison_id} proxy metric needs target_metric_status "
+                f"in {sorted(TARGET_METRIC_STATUSES)}"
+            )
+        if not _text(comparison.get("progress_unit")):
+            errors.append(f"training comparison {comparison_id} needs a progress_unit")
+        candidate_progress = _decimal(
+            comparison.get("candidate_progress"),
+            f"training comparison {comparison_id} candidate_progress",
+            errors,
+        )
+        baseline_progress = _decimal(
+            comparison.get("baseline_progress"),
+            f"training comparison {comparison_id} baseline_progress",
+            errors,
+        )
+        for name, value in (
+            ("candidate_progress", candidate_progress),
+            ("baseline_progress", baseline_progress),
+        ):
+            if value is not None and value < 0:
+                errors.append(f"training comparison {comparison_id} {name} must be non-negative")
+
+        alignment_method = comparison.get("alignment_method")
+        if alignment_method not in ALIGNMENT_METHODS:
+            errors.append(
+                f"training comparison {comparison_id} alignment_method must be one of "
+                f"{sorted(ALIGNMENT_METHODS)}"
+            )
+        claim_scope = comparison.get("claim_scope")
+        if claim_scope not in TRAINING_CLAIM_SCOPES:
+            errors.append(
+                f"training comparison {comparison_id} claim_scope must be one of "
+                f"{sorted(TRAINING_CLAIM_SCOPES)}"
+            )
+        for field in ("candidate_final", "baseline_final", "winner_claimed"):
+            if not isinstance(comparison.get(field), bool):
+                errors.append(f"training comparison {comparison_id} {field} must be boolean")
+
+        if claim_scope == "CURRENT_PROGRESS":
+            if alignment_method == "FINAL_PROTOCOL":
+                errors.append(
+                    f"training comparison {comparison_id} current-progress claim cannot use FINAL_PROTOCOL"
+                )
+            if (
+                alignment_method == "EXACT"
+                and candidate_progress is not None
+                and baseline_progress is not None
+                and candidate_progress != baseline_progress
+            ):
+                errors.append(
+                    f"training comparison {comparison_id} EXACT alignment must use the same progress"
+                )
+            if alignment_method in {"NEAREST", "INTERPOLATED"}:
+                if not _text(comparison.get("alignment_note")):
+                    errors.append(
+                        f"training comparison {comparison_id} {alignment_method} needs an alignment_note"
+                    )
+                if comparison.get("alignment_uncertainty_disclosed") is not True:
+                    errors.append(
+                        f"training comparison {comparison_id} {alignment_method} must disclose alignment uncertainty"
+                    )
+            if comparison.get("winner_claimed") is True:
+                errors.append(
+                    f"training comparison {comparison_id} current-progress evidence cannot claim a final winner"
+                )
+
+        if claim_scope == "FINAL_PERFORMANCE":
+            if alignment_method != "FINAL_PROTOCOL":
+                errors.append(
+                    f"training comparison {comparison_id} final-performance claim needs FINAL_PROTOCOL"
+                )
+            if comparison.get("candidate_final") is not True or comparison.get("baseline_final") is not True:
+                errors.append(
+                    f"training comparison {comparison_id} final-performance claim needs both runs final"
+                )
+            if comparison.get("budget_or_stopping_rule_comparable") is not True:
+                errors.append(
+                    f"training comparison {comparison_id} final-performance claim needs a comparable budget or stopping rule"
+                )
+            if metric_role != "TARGET":
+                errors.append(
+                    f"training comparison {comparison_id} proxy metric cannot support a final-performance claim"
+                )
+
+        if metric_role == "PROXY" and comparison.get("winner_claimed") is True:
+            errors.append(
+                f"training comparison {comparison_id} proxy metric cannot support a final winner claim"
+            )
+
+    return len(comparisons)
 
 
 def audit_ledger(payload: Any) -> dict:
@@ -191,6 +350,7 @@ def audit_ledger(payload: Any) -> dict:
         errors.append("values must be a non-empty array")
         values = []
     value_ids: set[str] = set()
+    value_index: dict[str, dict] = {}
     for index, value in enumerate(values):
         label = f"values[{index}]"
         if not isinstance(value, dict):
@@ -202,7 +362,9 @@ def audit_ledger(payload: Any) -> dict:
             value_id = label
         elif value_id in value_ids:
             errors.append(f"duplicate value_id: {value_id}")
-        value_ids.add(value_id)
+        if _text(value_id):
+            value_ids.add(value_id)
+            value_index.setdefault(value_id, value)
         for field in ("claim_id", "location", "reported_text", "reported_unit"):
             if not _text(value.get(field)):
                 errors.append(f"value {value_id} needs a non-empty {field}")
@@ -296,6 +458,8 @@ def audit_ledger(payload: Any) -> dict:
         if classification == "MISMATCH" and not _text(value.get("author_action")):
             errors.append(f"MISMATCH value {value_id} needs an author_action")
 
+    training_comparison_count = _audit_training_comparisons(payload, value_index, errors)
+
     if errors or counts["UNVERIFIABLE"]:
         verdict = "BLOCKED"
     elif counts["MISMATCH"]:
@@ -305,6 +469,7 @@ def audit_ledger(payload: Any) -> dict:
     return {
         "verdict": verdict,
         "counts": counts,
+        "training_comparison_count": training_comparison_count,
         "errors": errors,
         "scope": "declared_manuscript_values_to_recorded_runs",
         "scientific_correctness_implied": False,
