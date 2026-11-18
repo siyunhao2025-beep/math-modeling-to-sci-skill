@@ -17,6 +17,7 @@ import shutil
 import sys
 import tempfile
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 
 PHASES = ("F", "O", "R", "G", "E")
@@ -54,6 +55,16 @@ FINAL_SIZE_TOLERANCE_MM = 0.1
 VERIFICATION_DEPTHS = ("text_bound", "source_bound", "execution_bound", "render_bound")
 VERIFICATION_RANK = {name: rank for rank, name in enumerate(VERIFICATION_DEPTHS)}
 MIN_GATE_G_VERIFICATION = "source_bound"
+INTEGRITY_STATUSES = {
+    "NO_SIGNAL_FOUND", "RETRACTED", "WITHDRAWN", "REMOVED",
+    "EXPRESSION_OF_CONCERN", "CORRECTED", "NOT_CHECKED",
+}
+FATAL_INTEGRITY_STATUSES = {
+    "RETRACTED", "WITHDRAWN", "REMOVED", "EXPRESSION_OF_CONCERN",
+}
+CORRECTION_EFFECTS = {
+    "NOT_APPLICABLE", "UNAFFECTED", "AFFECTS_CITED_CONTENT", "UNKNOWN",
+}
 
 
 def now() -> str:
@@ -77,6 +88,70 @@ def is_sha256(value: object) -> bool:
 def is_positive_number(value: object) -> bool:
     return (isinstance(value, (int, float)) and not isinstance(value, bool)
             and math.isfinite(float(value)) and value > 0)
+
+
+def is_timezone_aware_timestamp(value: object) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None and parsed.utcoffset() is not None
+
+
+def is_https_url(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    parsed = urlparse(value)
+    return parsed.scheme == "https" and bool(parsed.netloc)
+
+
+def check_publication_integrity(cite: dict, citation_id: object, errors: list[str]) -> None:
+    status = cite.get("integrity_status")
+    effect = cite.get("correction_effect")
+    if status not in INTEGRITY_STATUSES:
+        errors.append(f"citation {citation_id!r} has invalid integrity_status {status!r}")
+        return
+    if effect not in CORRECTION_EFFECTS:
+        errors.append(f"citation {citation_id!r} has invalid correction_effect {effect!r}")
+
+    if status == "NOT_CHECKED":
+        errors.append(f"citation {citation_id!r} integrity_status NOT_CHECKED requires author action")
+        return
+
+    if not is_https_url(cite.get("integrity_source_url")):
+        errors.append(f"citation {citation_id!r} needs an HTTPS integrity_source_url")
+    if not is_timezone_aware_timestamp(cite.get("integrity_checked_at")):
+        errors.append(
+            f"citation {citation_id!r} integrity_checked_at must be a timezone-aware ISO-8601 timestamp"
+        )
+
+    if status in FATAL_INTEGRITY_STATUSES:
+        errors.append(f"citation {citation_id!r} has blocking integrity_status {status}")
+        return
+
+    if status == "CORRECTED":
+        if effect == "AFFECTS_CITED_CONTENT":
+            errors.append(
+                f"citation {citation_id!r} correction_effect AFFECTS_CITED_CONTENT blocks support"
+            )
+        elif effect == "UNKNOWN":
+            errors.append(f"citation {citation_id!r} correction_effect UNKNOWN requires author action")
+        elif effect == "UNAFFECTED":
+            if not is_https_url(cite.get("correction_locator")):
+                errors.append(
+                    f"citation {citation_id!r} needs an HTTPS correction_locator for CORRECTED"
+                )
+        else:
+            errors.append(
+                f"citation {citation_id!r} CORRECTED requires correction_effect "
+                "UNAFFECTED, AFFECTS_CITED_CONTENT or UNKNOWN"
+            )
+    elif effect != "NOT_APPLICABLE":
+        errors.append(
+            f"citation {citation_id!r} may use correction_effect {effect!r} only with CORRECTED"
+        )
 
 
 def write_json(path: Path, payload: object) -> None:
@@ -488,6 +563,7 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
         cid = cite.get("citation_id")
         if cite.get("identity_status") != "VERIFIED":
             errors.append(f"citation {cid!r} identity is not VERIFIED")
+        check_publication_integrity(cite, cid, errors)
         support = cite.get("support_status")
         if support in {"CONTRADICTS", "DOES_NOT_SUPPORT"}:
             errors.append(f"citation {cid!r} has blocking support status {support}")

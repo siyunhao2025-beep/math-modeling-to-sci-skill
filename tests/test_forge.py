@@ -42,6 +42,44 @@ def verification(required="source_bound", reached=None, locator="R1") -> dict:
     }
 
 
+def citation(**overrides) -> dict:
+    row = {
+        "citation_id": "R1",
+        "identity_status": "VERIFIED",
+        "integrity_status": "NO_SIGNAL_FOUND",
+        "integrity_checked_at": "2026-11-18T10:00:00+08:00",
+        "integrity_source_url": "https://publisher.example/article/R1",
+        "correction_effect": "NOT_APPLICABLE",
+        "support_status": "SUPPORTS",
+        "sentence_tier": "background",
+        "access_level": "metadata_only",
+        "locator": "",
+    }
+    row.update(overrides)
+    return row
+
+
+def g_workspace_with_citation(tmp_path: Path, row: dict) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    work = init_workspace(tmp_path)
+    dump(work / "04-manuscript" / "claim-map.json", {
+        "complete": True,
+        "claims": [{
+            "claim_id": "C1", "text": "The cited work establishes the background.",
+            "evidence_ids": ["R1"], "risk": "low", "status": "SUPPORTED",
+            "verification": verification(),
+        }],
+    })
+    dump(work / "04-manuscript" / "figure-manifest.json", {
+        "complete": True, "figures": [], "waiver_reason": "No figure is needed for this claim."
+    })
+    dump(work / "04-manuscript" / "citation-audit.json", {
+        "complete": True, "blockers": [], "citations": [row],
+    })
+    (work / "04-manuscript" / "manuscript.md").write_text("draft", encoding="utf-8")
+    return work
+
+
 def complete_f(work: Path) -> None:
     dump(work / "01-forensics" / "asset-inventory.json", {
         "schema_version": "2.0",
@@ -200,17 +238,87 @@ def test_g_gate_enforces_access_depth_for_quantitative_citation(tmp_path):
     })
     dump(work / "04-manuscript" / "citation-audit.json", {
         "complete": True, "blockers": [],
-        "citations": [{
-            "citation_id": "R1", "identity_status": "VERIFIED",
-            "support_status": "SUPPORTS", "sentence_tier": "quantitative",
-            "access_level": "abstract_only", "locator": "",
-        }],
+        "citations": [citation(
+            sentence_tier="quantitative", access_level="abstract_only", locator=""
+        )],
     })
     (work / "04-manuscript" / "manuscript.md").write_text("draft", encoding="utf-8")
     result = forge.evaluate(work, "G")
     assert not result["passed"]
     assert any("too shallow" in item for item in result["errors"])
     assert any("locator" in item for item in result["errors"])
+
+
+def test_g_gate_requires_publication_integrity_as_a_separate_axis(tmp_path):
+    row = citation()
+    for field in (
+        "integrity_status", "integrity_checked_at", "integrity_source_url", "correction_effect"
+    ):
+        row.pop(field)
+    result = forge.evaluate(g_workspace_with_citation(tmp_path, row), "G")
+    assert not result["passed"]
+    assert any("integrity_status" in item for item in result["errors"])
+
+
+def test_g_gate_blocks_fatal_or_unresolved_integrity_signals(tmp_path):
+    for status in (
+        "RETRACTED", "WITHDRAWN", "REMOVED", "EXPRESSION_OF_CONCERN", "NOT_CHECKED"
+    ):
+        row = citation(integrity_status=status)
+        if status == "NOT_CHECKED":
+            row.update(integrity_checked_at="", integrity_source_url="")
+        result = forge.evaluate(g_workspace_with_citation(tmp_path / status.lower(), row), "G")
+        assert not result["passed"], status
+        assert any(status in item for item in result["errors"]), result
+
+
+def test_g_gate_requires_correction_effect_and_locator(tmp_path):
+    for effect in ("UNKNOWN", "AFFECTS_CITED_CONTENT"):
+        result = forge.evaluate(g_workspace_with_citation(
+            tmp_path / effect.lower(),
+            citation(
+                integrity_status="CORRECTED",
+                correction_effect=effect,
+                correction_locator="https://publisher.example/correction/R1",
+            ),
+        ), "G")
+        assert not result["passed"], effect
+        assert any(effect in item for item in result["errors"]), result
+
+    result = forge.evaluate(g_workspace_with_citation(
+        tmp_path / "missing-locator",
+        citation(integrity_status="CORRECTED", correction_effect="UNAFFECTED"),
+    ), "G")
+    assert not result["passed"]
+    assert any("correction_locator" in item for item in result["errors"])
+
+
+def test_g_gate_accepts_checked_record_and_unaffected_correction(tmp_path):
+    clean = forge.evaluate(g_workspace_with_citation(
+        tmp_path / "no-signal", citation()
+    ), "G")
+    assert clean["passed"], clean
+
+    corrected = forge.evaluate(g_workspace_with_citation(
+        tmp_path / "corrected",
+        citation(
+            integrity_status="CORRECTED",
+            correction_effect="UNAFFECTED",
+            correction_locator="https://publisher.example/correction/R1",
+        ),
+    ), "G")
+    assert corrected["passed"], corrected
+
+
+def test_g_gate_rejects_untraceable_integrity_check(tmp_path):
+    row = citation(
+        integrity_checked_at="2026-11-18T10:00:00",
+        integrity_source_url="http://publisher.example/article/R1",
+    )
+    result = forge.evaluate(g_workspace_with_citation(tmp_path, row), "G")
+    assert not result["passed"]
+    assert any("timezone-aware" in item for item in result["errors"])
+    assert any("HTTPS" in item for item in result["errors"])
 
 
 def test_g_gate_rejects_visual_review_after_reviewed_output_changes(tmp_path):
@@ -244,11 +352,7 @@ def test_g_gate_rejects_visual_review_after_reviewed_output_changes(tmp_path):
     })
     dump(work / "04-manuscript" / "citation-audit.json", {
         "complete": True, "blockers": [],
-        "citations": [{
-            "citation_id": "R1", "identity_status": "VERIFIED",
-            "support_status": "SUPPORTS", "sentence_tier": "background",
-            "access_level": "metadata_only", "locator": "",
-        }],
+        "citations": [citation()],
     })
     (work / "04-manuscript" / "manuscript.md").write_text("draft", encoding="utf-8")
 
@@ -285,11 +389,7 @@ def test_g_gate_accepts_visual_review_bound_to_current_outputs(tmp_path):
     })
     dump(work / "04-manuscript" / "citation-audit.json", {
         "complete": True, "blockers": [],
-        "citations": [{
-            "citation_id": "R1", "identity_status": "VERIFIED",
-            "support_status": "SUPPORTS", "sentence_tier": "background",
-            "access_level": "metadata_only", "locator": "",
-        }],
+        "citations": [citation()],
     })
     (work / "04-manuscript" / "manuscript.md").write_text("draft", encoding="utf-8")
 
@@ -324,11 +424,7 @@ def test_g_gate_rejects_supported_claim_without_verification_depth(tmp_path):
     })
     dump(work / "04-manuscript" / "citation-audit.json", {
         "complete": True, "blockers": [],
-        "citations": [{
-            "citation_id": "R1", "identity_status": "VERIFIED",
-            "support_status": "SUPPORTS", "sentence_tier": "background",
-            "access_level": "metadata_only", "locator": "",
-        }],
+        "citations": [citation()],
     })
     (work / "04-manuscript" / "manuscript.md").write_text("draft", encoding="utf-8")
 
@@ -368,11 +464,7 @@ def test_g_gate_rejects_shallow_or_under_reached_verification(tmp_path):
     })
     dump(work / "04-manuscript" / "citation-audit.json", {
         "complete": True, "blockers": [],
-        "citations": [{
-            "citation_id": "R1", "identity_status": "VERIFIED",
-            "support_status": "SUPPORTS", "sentence_tier": "background",
-            "access_level": "metadata_only", "locator": "",
-        }],
+        "citations": [citation()],
     })
     (work / "04-manuscript" / "manuscript.md").write_text("draft", encoding="utf-8")
 
@@ -419,11 +511,7 @@ def test_g_gate_rejects_visual_review_at_wrong_final_width(tmp_path):
     })
     dump(work / "04-manuscript" / "citation-audit.json", {
         "complete": True, "blockers": [],
-        "citations": [{
-            "citation_id": "R1", "identity_status": "VERIFIED",
-            "support_status": "SUPPORTS", "sentence_tier": "background",
-            "access_level": "metadata_only", "locator": "",
-        }],
+        "citations": [citation()],
     })
     (work / "04-manuscript" / "manuscript.md").write_text("draft", encoding="utf-8")
 

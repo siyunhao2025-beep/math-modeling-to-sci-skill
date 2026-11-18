@@ -68,6 +68,7 @@
     "research conversion can stop as NOT_READY_FOR_CONVERSION",
     "model archetype matching is a candidate hypothesis, not a model verdict",
     "citation identity and sentence support are separate checks",
+    "publication integrity is a separate axis and absence of a signal is not proof of a clean record",
     "figure count follows claim coverage rather than a fixed quota",
     "a numeric score never overrides a scientific or compliance blocker",
     "current official journal evidence is required for time-sensitive claims",
