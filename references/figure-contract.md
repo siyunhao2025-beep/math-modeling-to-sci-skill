@@ -14,12 +14,40 @@
 | script | 可重建图的脚本或明确生成流程 |
 | outputs | 已交付并实际审阅的当前图件文件；至少一个，路径相对工作区 |
 | target_width_mm | 图件在稿件或投稿版式中的目标物理宽度，正数，单位 mm |
+| figure_type | 可选；`data`、`roadmap` 或 `schematic`。旧清单省略时保持兼容；声明后启用对应检查 |
+| editable_artifact | `roadmap`/`schematic` 的可编辑源、格式与稳定语义对象清单；见下节 |
 | panels | 每个面板提供的不同证据 |
 | caption_claim | 图注可核验结论与边界 |
 | risks | 可能误导的轴、截断、平滑、尺度、配色 |
 | visual_review | 审阅者、带时区时间、按目标物理宽度审阅时的 `reviewed_width_mm`，以及每个 `outputs` 文件在审阅时的 SHA-256 |
 
 没有独立科学问题或证据增量的图不进入正式稿。同一数据换成折线、柱状和雷达图不算三项证据。
+
+### 可编辑路线图/示意图的语义对象契约
+
+路线图或原理示意图若声明 `figure_type`，建议同时提供 `editable_artifact`：
+
+```json
+{
+  "figure_type": "schematic",
+  "editable_artifact": {
+    "source": "04-manuscript/fig-method.svg",
+    "format": "svg",
+    "objects": [
+      {"object_id": "input-data", "kind": "node"},
+      {"object_id": "model", "kind": "node"},
+      {"object_id": "input-to-model", "kind": "connector",
+       "source_id": "input-data", "target_id": "model"}
+    ]
+  }
+}
+```
+
+`format` 只接受 `svg`、`drawio`、`pptx`，源文件必须位于工作区内且真实存在。`object_id`
+在同一图中必须唯一并跨修订保持稳定；连接对象的 `source_id`、`target_id` 必须指向清单中的
+对象。局部修订只改目标对象及必要连线，未涉及对象保留原 ID。该契约验证可编辑源与引用完整性，
+不判断布局、美观、连线语义或科学内容是否正确。为兼容旧工作区，缺少 `figure_type` 不阻断；
+已声明路线图/示意图但缺 `editable_artifact` 时给出警告。
 
 ## 2. 常见证据角色
 

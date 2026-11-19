@@ -52,6 +52,9 @@ READY = "READY_FOR_HUMAN_SUBMISSION_CHECK"
 ACCESS_RANK = {"metadata_only": 0, "abstract_only": 1, "full_text": 2, "project_result": 3}
 MIN_ACCESS = {"background": 0, "method": 1, "quantitative": 2, "causal": 2, "mechanistic": 2}
 FINAL_SIZE_TOLERANCE_MM = 0.1
+SEMANTIC_FIGURE_TYPES = {"roadmap", "schematic"}
+EDITABLE_FIGURE_FORMATS = {"svg", "drawio", "pptx"}
+SEMANTIC_OBJECT_KINDS = {"node", "group", "label", "connector"}
 VERIFICATION_DEPTHS = ("text_bound", "source_bound", "execution_bound", "render_bound")
 VERIFICATION_RANK = {name: rank for rank, name in enumerate(VERIFICATION_DEPTHS)}
 MIN_GATE_G_VERIFICATION = "source_bound"
@@ -177,6 +180,86 @@ def inside(root: Path, candidate: Path) -> bool:
         return True
     except (ValueError, OSError):
         return False
+
+
+def check_editable_artifact(
+        root: Path, fig: dict, errors: list[str], warnings: list[str]) -> None:
+    """Validate an optional semantic editing contract for roadmap/schematic figures."""
+    figure_id = fig.get("figure_id")
+    figure_type = fig.get("figure_type")
+    if figure_type is None:
+        return
+    if figure_type not in {"data", *SEMANTIC_FIGURE_TYPES}:
+        errors.append(f"figure {figure_id!r} has invalid figure_type {figure_type!r}")
+        return
+    if figure_type not in SEMANTIC_FIGURE_TYPES:
+        return
+
+    artifact = fig.get("editable_artifact")
+    if artifact is None:
+        warnings.append(
+            f"figure {figure_id!r} is a {figure_type} without editable_artifact; "
+            "local object-level revision cannot be checked"
+        )
+        return
+    if not isinstance(artifact, dict):
+        errors.append(f"figure {figure_id!r} editable_artifact must be an object")
+        return
+
+    source = artifact.get("source")
+    fmt = artifact.get("format")
+    if fmt not in EDITABLE_FIGURE_FORMATS:
+        errors.append(
+            f"figure {figure_id!r} editable_artifact.format must be one of "
+            f"{sorted(EDITABLE_FIGURE_FORMATS)}"
+        )
+    if not isinstance(source, str) or not source.strip():
+        errors.append(f"figure {figure_id!r} editable_artifact.source is required")
+    else:
+        source_path = root / source
+        if not inside(root, source_path) or not source_path.is_file():
+            errors.append(f"figure {figure_id!r} editable source missing or unsafe: {source}")
+        elif fmt in EDITABLE_FIGURE_FORMATS and source_path.suffix.lower() != f".{fmt}":
+            errors.append(
+                f"figure {figure_id!r} editable source suffix does not match format {fmt!r}"
+            )
+
+    objects = artifact.get("objects")
+    if not isinstance(objects, list) or not objects:
+        errors.append(f"figure {figure_id!r} editable_artifact.objects must be a non-empty list")
+        return
+    object_ids: list[str] = []
+    for obj in objects:
+        if not isinstance(obj, dict):
+            errors.append(f"figure {figure_id!r} has a non-object semantic object entry")
+            continue
+        object_id = obj.get("object_id")
+        kind = obj.get("kind")
+        if not isinstance(object_id, str) or not object_id.strip():
+            errors.append(f"figure {figure_id!r} has a semantic object without object_id")
+            continue
+        object_ids.append(object_id)
+        if kind not in SEMANTIC_OBJECT_KINDS:
+            errors.append(
+                f"figure {figure_id!r} object {object_id!r} has invalid kind {kind!r}"
+            )
+    duplicates = sorted({item for item in object_ids if object_ids.count(item) > 1})
+    if duplicates:
+        errors.append(
+            f"figure {figure_id!r} has duplicate semantic object IDs: {', '.join(duplicates)}"
+        )
+    known_ids = set(object_ids)
+    for obj in objects:
+        if not isinstance(obj, dict) or obj.get("kind") != "connector":
+            continue
+        object_id = obj.get("object_id")
+        for endpoint in ("source_id", "target_id"):
+            target = obj.get(endpoint)
+            if target not in known_ids:
+                errors.append(
+                    f"figure {figure_id!r} connector {object_id!r} has unknown "
+                    f"{endpoint} {target!r}"
+                )
 
 
 def log_event(root: Path, event: str, **fields: object) -> None:
@@ -491,6 +574,7 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
     for fig in figure_items:
         if not fig.get("figure_id") or not fig.get("claim_ids") or not fig.get("source_data"):
             errors.append("each figure needs figure_id, claim_ids and source_data")
+        check_editable_artifact(root, fig, errors, warnings)
         review = fig.get("visual_review") or {}
         if not isinstance(review, dict):
             errors.append(f"figure {fig.get('figure_id')!r} visual_review must be an object")

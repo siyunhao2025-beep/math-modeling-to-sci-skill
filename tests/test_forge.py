@@ -80,6 +80,40 @@ def g_workspace_with_citation(tmp_path: Path, row: dict) -> Path:
     return work
 
 
+def g_workspace_with_figure(tmp_path: Path, editable_artifact: dict) -> Path:
+    work = init_workspace(tmp_path)
+    output = work / "04-manuscript" / "fig-method.svg"
+    output.write_text("<svg/>", encoding="utf-8")
+    dump(work / "04-manuscript" / "claim-map.json", {
+        "complete": True,
+        "claims": [{
+            "claim_id": "C1", "text": "The workflow preserves traceability.",
+            "evidence_ids": ["R1"], "risk": "low", "status": "SUPPORTED",
+            "verification": verification(),
+        }],
+    })
+    dump(work / "04-manuscript" / "figure-manifest.json", {
+        "complete": True,
+        "figures": [{
+            "figure_id": "F1", "figure_type": "schematic", "claim_ids": ["C1"],
+            "source_data": ["03-revalidation/validation-results.json"],
+            "editable_artifact": editable_artifact,
+            "target_width_mm": 85.0,
+            "outputs": ["04-manuscript/fig-method.svg"],
+            "visual_review": {
+                "reviewer": "author", "reviewed_at": "2026-11-19T10:00:00+08:00",
+                "reviewed_width_mm": 85.0,
+                "output_sha256": {"04-manuscript/fig-method.svg": forge.sha256(output)},
+            },
+        }],
+    })
+    dump(work / "04-manuscript" / "citation-audit.json", {
+        "complete": True, "blockers": [], "citations": [citation()],
+    })
+    (work / "04-manuscript" / "manuscript.md").write_text("draft", encoding="utf-8")
+    return work
+
+
 def complete_f(work: Path) -> None:
     dump(work / "01-forensics" / "asset-inventory.json", {
         "schema_version": "2.0",
@@ -395,6 +429,38 @@ def test_g_gate_accepts_visual_review_bound_to_current_outputs(tmp_path):
 
     result = forge.evaluate(work, "G")
     assert result["passed"], result
+
+
+def test_g_gate_accepts_editable_schematic_with_stable_object_ids(tmp_path):
+    work = g_workspace_with_figure(tmp_path, {
+        "source": "04-manuscript/fig-method.svg", "format": "svg",
+        "objects": [
+            {"object_id": "input", "kind": "node"},
+            {"object_id": "model", "kind": "node"},
+            {"object_id": "input-to-model", "kind": "connector",
+             "source_id": "input", "target_id": "model"},
+        ],
+    })
+
+    result = forge.evaluate(work, "G")
+    assert result["passed"], result
+
+
+def test_g_gate_rejects_duplicate_or_dangling_semantic_objects(tmp_path):
+    work = g_workspace_with_figure(tmp_path, {
+        "source": "04-manuscript/fig-method.svg", "format": "svg",
+        "objects": [
+            {"object_id": "input", "kind": "node"},
+            {"object_id": "input", "kind": "node"},
+            {"object_id": "edge", "kind": "connector",
+             "source_id": "input", "target_id": "missing"},
+        ],
+    })
+
+    result = forge.evaluate(work, "G")
+    assert not result["passed"]
+    assert any("duplicate semantic object IDs" in item for item in result["errors"])
+    assert any("unknown target_id" in item for item in result["errors"])
 
 
 def test_g_gate_rejects_supported_claim_without_verification_depth(tmp_path):
