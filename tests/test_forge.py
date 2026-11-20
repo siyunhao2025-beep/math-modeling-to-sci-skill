@@ -440,6 +440,17 @@ def test_g_gate_accepts_editable_schematic_with_stable_object_ids(tmp_path):
             {"object_id": "input-to-model", "kind": "connector",
              "source_id": "input", "target_id": "model"},
         ],
+        "content_ledger": {
+            "source_object_ids": ["input", "preprocess", "model", "input-to-model"],
+            "entries": [
+                {"source_id": "input", "action": "retained", "target_id": "input"},
+                {"source_id": "preprocess", "action": "merged", "target_id": "input",
+                 "reason": "The two acquisition boxes carry one source role."},
+                {"source_id": "model", "action": "retained", "target_id": "model"},
+                {"source_id": "input-to-model", "action": "retained",
+                 "target_id": "input-to-model"},
+            ],
+        },
     })
 
     result = forge.evaluate(work, "G")
@@ -461,6 +472,40 @@ def test_g_gate_rejects_duplicate_or_dangling_semantic_objects(tmp_path):
     assert not result["passed"]
     assert any("duplicate semantic object IDs" in item for item in result["errors"])
     assert any("unknown target_id" in item for item in result["errors"])
+
+
+def test_g_gate_rejects_silent_or_unapproved_figure_omissions(tmp_path):
+    work = g_workspace_with_figure(tmp_path, {
+        "source": "04-manuscript/fig-method.svg", "format": "svg",
+        "objects": [
+            {"object_id": "input", "kind": "node"},
+            {"object_id": "model", "kind": "node"},
+        ],
+        "content_ledger": {
+            "source_object_ids": ["input", "evidence-panel", "unaccounted"],
+            "entries": [
+                {"source_id": "input", "action": "retained", "target_id": "input"},
+                {"source_id": "evidence-panel", "action": "omitted",
+                 "evidence_bearing": True, "reason": "Does not fit the overview."},
+            ],
+        },
+    })
+
+    result = forge.evaluate(work, "G")
+    assert not result["passed"]
+    assert any("author_approved=true" in item for item in result["errors"])
+    assert any("unaccounted" in item for item in result["errors"])
+
+
+def test_g_gate_keeps_legacy_editable_figure_compatible_with_warning(tmp_path):
+    work = g_workspace_with_figure(tmp_path, {
+        "source": "04-manuscript/fig-method.svg", "format": "svg",
+        "objects": [{"object_id": "input", "kind": "node"}],
+    })
+
+    result = forge.evaluate(work, "G")
+    assert result["passed"], result
+    assert any("content_ledger" in item for item in result["warnings"])
 
 
 def test_g_gate_rejects_supported_claim_without_verification_depth(tmp_path):

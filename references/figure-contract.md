@@ -38,7 +38,19 @@
       {"object_id": "model", "kind": "node"},
       {"object_id": "input-to-model", "kind": "connector",
        "source_id": "input-data", "target_id": "model"}
-    ]
+    ],
+    "content_ledger": {
+      "source_object_ids": ["raw-input", "cleaning", "model", "input-to-model"],
+      "entries": [
+        {"source_id": "raw-input", "action": "merged", "target_id": "input-data",
+         "reason": "Acquisition and cleaning share one role in the overview."},
+        {"source_id": "cleaning", "action": "merged", "target_id": "input-data",
+         "reason": "Acquisition and cleaning share one role in the overview."},
+        {"source_id": "model", "action": "retained", "target_id": "model"},
+        {"source_id": "input-to-model", "action": "retained",
+         "target_id": "input-to-model"}
+      ]
+    }
   }
 }
 ```
@@ -48,6 +60,15 @@
 对象。局部修订只改目标对象及必要连线，未涉及对象保留原 ID。该契约验证可编辑源与引用完整性，
 不判断布局、美观、连线语义或科学内容是否正确。为兼容旧工作区，缺少 `figure_type` 不阻断；
 已声明路线图/示意图但缺 `editable_artifact` 时给出警告。
+
+当路线图或示意图从更细的蓝图、旧版图或对象清单压缩而来时，用 `content_ledger` 防止
+“画面变简洁”被误当成可以静默丢对象：`source_object_ids` 登记压缩前对象，每个对象在
+`entries` 中恰好出现一次，`action` 只能是 `retained`、`merged` 或 `omitted`。前两种必须
+指向当前 `objects` 中的 `target_id`；`merged` 和 `omitted` 必须写理由。省略对象还要明确
+布尔值 `evidence_bearing`；若它承载证据，只有 `author_approved=true` 才能通过。旧清单缺少
+`content_ledger` 时只给警告；一旦提供，未知目标、重复处置、未处置对象和未经批准的证据省略
+都会阻断 Gate G。该账本记录对象去向，不要求把所有内容塞进一张图，也不替代人工判断一项省略
+是否科学合理。
 
 ## 2. 常见证据角色
 

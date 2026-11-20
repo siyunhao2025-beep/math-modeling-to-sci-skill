@@ -55,6 +55,7 @@ FINAL_SIZE_TOLERANCE_MM = 0.1
 SEMANTIC_FIGURE_TYPES = {"roadmap", "schematic"}
 EDITABLE_FIGURE_FORMATS = {"svg", "drawio", "pptx"}
 SEMANTIC_OBJECT_KINDS = {"node", "group", "label", "connector"}
+CONTENT_DISPOSITIONS = {"retained", "merged", "omitted"}
 VERIFICATION_DEPTHS = ("text_bound", "source_bound", "execution_bound", "render_bound")
 VERIFICATION_RANK = {name: rank for rank, name in enumerate(VERIFICATION_DEPTHS)}
 MIN_GATE_G_VERIFICATION = "source_bound"
@@ -260,6 +261,100 @@ def check_editable_artifact(
                     f"figure {figure_id!r} connector {object_id!r} has unknown "
                     f"{endpoint} {target!r}"
                 )
+
+    ledger = artifact.get("content_ledger")
+    if ledger is None:
+        warnings.append(
+            f"figure {figure_id!r} editable_artifact lacks content_ledger; "
+            "diagram simplification cannot be checked for silent object loss"
+        )
+        return
+    if not isinstance(ledger, dict):
+        errors.append(f"figure {figure_id!r} content_ledger must be an object")
+        return
+
+    source_ids = ledger.get("source_object_ids")
+    entries = ledger.get("entries")
+    if (not isinstance(source_ids, list) or not source_ids
+            or any(not isinstance(item, str) or not item.strip() for item in source_ids)):
+        errors.append(
+            f"figure {figure_id!r} content_ledger.source_object_ids must be a non-empty "
+            "list of strings"
+        )
+        return
+    duplicate_sources = sorted({item for item in source_ids if source_ids.count(item) > 1})
+    if duplicate_sources:
+        errors.append(
+            f"figure {figure_id!r} content_ledger has duplicate source object IDs: "
+            f"{', '.join(duplicate_sources)}"
+        )
+    if not isinstance(entries, list):
+        errors.append(f"figure {figure_id!r} content_ledger.entries must be a list")
+        return
+
+    accounted: list[str] = []
+    source_set = set(source_ids)
+    for entry in entries:
+        if not isinstance(entry, dict):
+            errors.append(f"figure {figure_id!r} has a non-object content disposition")
+            continue
+        source_id = entry.get("source_id")
+        action = entry.get("action")
+        if not isinstance(source_id, str) or not source_id.strip():
+            errors.append(f"figure {figure_id!r} content disposition lacks source_id")
+            continue
+        accounted.append(source_id)
+        if source_id not in source_set:
+            errors.append(
+                f"figure {figure_id!r} content disposition references unknown source_id "
+                f"{source_id!r}"
+            )
+        if action not in CONTENT_DISPOSITIONS:
+            errors.append(
+                f"figure {figure_id!r} source object {source_id!r} has invalid action "
+                f"{action!r}"
+            )
+            continue
+        if action in {"retained", "merged"}:
+            target_id = entry.get("target_id")
+            if target_id not in known_ids:
+                errors.append(
+                    f"figure {figure_id!r} source object {source_id!r} has unknown "
+                    f"target_id {target_id!r}"
+                )
+            if action == "merged" and not str(entry.get("reason") or "").strip():
+                errors.append(
+                    f"figure {figure_id!r} merged source object {source_id!r} needs a reason"
+                )
+        else:
+            if not str(entry.get("reason") or "").strip():
+                errors.append(
+                    f"figure {figure_id!r} omitted source object {source_id!r} needs a reason"
+                )
+            evidence_bearing = entry.get("evidence_bearing")
+            if not isinstance(evidence_bearing, bool):
+                errors.append(
+                    f"figure {figure_id!r} omitted source object {source_id!r} must declare "
+                    "boolean evidence_bearing"
+                )
+            elif evidence_bearing and entry.get("author_approved") is not True:
+                errors.append(
+                    f"figure {figure_id!r} evidence-bearing omission {source_id!r} needs "
+                    "author_approved=true"
+                )
+
+    duplicate_entries = sorted({item for item in accounted if accounted.count(item) > 1})
+    if duplicate_entries:
+        errors.append(
+            f"figure {figure_id!r} content_ledger has duplicate dispositions for: "
+            f"{', '.join(duplicate_entries)}"
+        )
+    missing = sorted(source_set - set(accounted))
+    if missing:
+        errors.append(
+            f"figure {figure_id!r} content_ledger leaves source objects unaccounted: "
+            f"{', '.join(missing)}"
+        )
 
 
 def log_event(root: Path, event: str, **fields: object) -> None:
