@@ -62,6 +62,7 @@ def main() -> int:
         "scripts/readiness/utils.py",
         "scripts/readiness/reference_verifier.py",
         "scripts/readiness/journal_fit.py",
+        "scripts/readiness/journal_style_profile.py",
         "scripts/readiness/claim_evidence.py",
         "scripts/readiness/figure_table_audit.py",
         "scripts/readiness/compliance_audit.py",
