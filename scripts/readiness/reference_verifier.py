@@ -28,6 +28,7 @@ CROSSREF = "https://api.crossref.org"
 S2 = "https://api.semanticscholar.org/graph/v1"
 NCBI = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 DOI_RE = re.compile(r"10\.\d{4,9}/\S+", re.I)
+PLANNED_PROVIDERS = ("crossref", "semantic_scholar", "pubmed")
 
 
 def now() -> str:
@@ -40,6 +41,90 @@ def normalize_doi(value: str | None) -> str | None:
     v = value.strip().strip("{}<>").replace("https://doi.org/", "").replace("http://doi.org/", "")
     m = DOI_RE.search(v)
     return m.group(0).rstrip(".,;)") if m else None
+
+
+def _provider_failure_reason(record: dict) -> str:
+    raw = record.get("raw_error")
+    if isinstance(raw, dict) and raw.get("error"):
+        return str(raw["error"])
+    if raw not in (None, "", {}):
+        return str(raw)
+    status = record.get("status")
+    return f"HTTP {status}" if status is not None else "no successful response"
+
+
+def source_coverage(
+    providers: list[dict],
+    *,
+    planned: tuple[str, ...] = PLANNED_PROVIDERS,
+    skip_reason: str | None = None,
+) -> dict:
+    """Expose actual provider outcomes without turning them into coverage claims.
+
+    A successful request with no matching record is kept separate from a failed
+    request. A provider that was planned but has no attempt record is explicit
+    ``skipped`` evidence rather than an implied zero result.
+    """
+    by_name = {}
+    for record in providers:
+        name = record.get("provider")
+        if name in by_name:
+            raise ValueError(f"duplicate provider outcome: {name}")
+        if name not in planned:
+            raise ValueError(f"unexpected provider outcome: {name}")
+        by_name[name] = record
+
+    result = {
+        "planned": list(planned),
+        "attempted": [],
+        "succeeded": [],
+        "zero_hits": [],
+        "failed": [],
+        "skipped": [],
+        "exhaustiveness_claim_allowed": False,
+    }
+    for name in planned:
+        record = by_name.get(name)
+        if record is None:
+            result["skipped"].append({
+                "provider": name,
+                "reason": skip_reason or "provider outcome missing",
+            })
+            continue
+        result["attempted"].append(name)
+        if record.get("found"):
+            result["succeeded"].append(name)
+        elif record.get("status") in {200, 404}:
+            result["zero_hits"].append(name)
+        else:
+            result["failed"].append({
+                "provider": name,
+                "reason": _provider_failure_reason(record),
+            })
+    result["outcome_counts"] = {
+        key: len(result[key]) for key in ("succeeded", "zero_hits", "failed", "skipped")
+    }
+    return result
+
+
+def summarize_source_coverage(results: list[dict]) -> dict:
+    totals = {"succeeded": 0, "zero_hits": 0, "failed": 0, "skipped": 0}
+    by_reference = []
+    for result in results:
+        coverage = result["source_coverage"]
+        by_reference.append({"key": result["key"], **coverage})
+        for key in totals:
+            totals[key] += coverage["outcome_counts"][key]
+    return {
+        "planned_providers": list(PLANNED_PROVIDERS),
+        "attempt_outcomes": totals,
+        "by_reference": by_reference,
+        "exhaustiveness_claim_allowed": False,
+        "important_limit": (
+            "Provider outcomes show what was attempted for each supplied reference; "
+            "they do not prove literature-search completeness or sentence support."
+        ),
+    }
 
 
 def _request_json(url: str, *, params=None, headers=None, timeout=15, retries=2):
@@ -189,6 +274,7 @@ def verify_entry(entry: dict, *, mailto=None, s2_key=None, ncbi_key=None) -> dic
             "reason": "no DOI present",
             "original": {"title": entry.get("title"), "year": entry.get("year")},
             "providers": [],
+            "source_coverage": source_coverage([], skip_reason="no DOI present"),
         }
     cr = crossref_lookup(doi, mailto)
     ss = semantic_scholar_lookup(doi, s2_key)
@@ -220,6 +306,7 @@ def verify_entry(entry: dict, *, mailto=None, s2_key=None, ncbi_key=None) -> dic
         "conflicts": conflicts,
         "original": {"title": entry.get("title"), "year": entry.get("year"), "journal": entry.get("journal")},
         "providers": providers,
+        "source_coverage": source_coverage(providers),
         "canonical": cr if cr.get("found") else (found[0] if found else None),
     }
 
@@ -234,6 +321,7 @@ def run(bib: str, out: str, clean_bib: str | None = None, *, mailto=None, s2_key
         "verified_at": now(),
         "input_bib": os.path.abspath(bib),
         "providers": ["crossref", "semantic_scholar", "pubmed"],
+        "source_coverage": summarize_source_coverage(results),
         "summary": {
             "total": len(results),
             "verified": len(verified),

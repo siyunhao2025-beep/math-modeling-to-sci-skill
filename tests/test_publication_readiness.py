@@ -11,7 +11,7 @@ if str(SCRIPTS) not in sys.path:
 
 from readiness.claim_evidence import run as claim_run  # noqa: E402
 from readiness.compliance_audit import run as compliance_run  # noqa: E402
-from readiness.reference_verifier import normalize_doi  # noqa: E402
+from readiness.reference_verifier import normalize_doi, source_coverage, verify_entry  # noqa: E402
 from readiness.submission_preflight import run as preflight_run  # noqa: E402
 
 
@@ -46,6 +46,31 @@ def test_normalize_doi():
     assert normalize_doi("https://doi.org/10.1234/ABC.5") == "10.1234/ABC.5"
     assert normalize_doi("doi: 10.1000/xyz123.") == "10.1000/xyz123"
     assert normalize_doi(None) is None
+
+
+def test_reference_source_coverage_separates_success_zero_hits_failure_and_skip():
+    coverage = source_coverage([
+        {"provider": "crossref", "found": True},
+        {"provider": "semantic_scholar", "found": False, "status": 404},
+        {"provider": "pubmed", "found": False, "status": None,
+         "raw_error": {"error": "timeout"}},
+    ])
+    assert coverage["planned"] == ["crossref", "semantic_scholar", "pubmed"]
+    assert coverage["attempted"] == ["crossref", "semantic_scholar", "pubmed"]
+    assert coverage["succeeded"] == ["crossref"]
+    assert coverage["zero_hits"] == ["semantic_scholar"]
+    assert coverage["failed"] == [{"provider": "pubmed", "reason": "timeout"}]
+    assert coverage["skipped"] == []
+    assert coverage["exhaustiveness_claim_allowed"] is False
+
+    skipped = source_coverage([], skip_reason="no DOI present")
+    assert skipped["attempted"] == []
+    assert [row["provider"] for row in skipped["skipped"]] == [
+        "crossref", "semantic_scholar", "pubmed"
+    ]
+    unresolved = verify_entry({"ID": "fixture-without-doi", "title": "Synthetic title"})
+    assert unresolved["status"] == "unverified"
+    assert unresolved["source_coverage"]["outcome_counts"]["skipped"] == 3
 
 
 def test_claim_evidence_blocks_unsupported_causal_claim(tmp_path):
