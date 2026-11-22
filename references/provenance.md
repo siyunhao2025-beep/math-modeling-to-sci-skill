@@ -320,7 +320,7 @@ MCP 服务、检索器或学生代码。
 |---|---|---|---|
 | `amirkiarafiei/open-scholar-peer` | `229370cbe34cde85499addd5246c95f1f1729f97` | 149★ / MIT | 采用“最终评审逐项披露实际拿到的上游输入，薄评审仍可生成但不能冒充完整评审”的抽象机制，按 Gate E 独立实现固定输入覆盖账本。未复制其提示词、代理、状态目录、安装器、MCP/CLI、检索运行时或文字。 |
 | `jmcandia/academic-code-review` | `d7d1ba8fc12eb46d2e529bec8c45f17d8074c67a` | 0★ / MIT | 必需输入、逐项证据与人工终审记录清楚，但目标是学生编程作业评分，权重、成绩换算和技术执行契约不适用于数模成果转 SCI；拒绝迁移评分运行时。 |
-| `daltonhaslam/lit-review-agent` | `05ff5993` | 2★ / MIT | PICO、协议锁、PRISMA、质量评价和断点状态完整，但偏医学系统综述并依赖多 API、PDF 与 Claude/Python 第二运行时；与本轮投稿前模拟审稿缺口不匹配，拒绝整合。 |
+| `daltonhaslam/lit-review-agent` | `05ff5993cba6e9fb62fca95e6866b064cfe0788f` | 2★ / MIT | PICO、协议锁、PRISMA、质量评价和断点状态完整，但偏医学系统综述并依赖多 API、PDF 与 Claude/Python 第二运行时；与本轮投稿前模拟审稿缺口不匹配，拒绝整合。 |
 
 旧 Gate E 会让没有任何上游输入覆盖记录的评审面板仅凭角色、完成标记和 `READY` 结论通过；
 新契约要求稿件、期刊范围、验证结果、引用身份/支持、主张—证据、图表和方法/报告/合规审计
