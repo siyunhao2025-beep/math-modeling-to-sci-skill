@@ -138,14 +138,21 @@ FORGE × TRACE 和变更控制约束。若风格要求与科学完整性冲突�
 - skeptical reviewer：反例、过度声称和失败模式；
 - reproducibility reviewer：数据、代码、环境和图表重建。
 
+先登记审稿输入覆盖，再允许角色打分。`review_coverage` 必须逐项覆盖稿件、期刊范围、模型验证、
+引用身份与句子支持、主张—证据、图表以及方法/报告/合规审计。每项状态只能是
+`REVIEWED / PARTIAL / MISSING / SKIPPED`；`REVIEWED` 必须给可定位的证据入口，其他状态必须写明
+原因。文件存在不等于已审阅；缺失、跳过或部分审阅的输入必须进入人读报告的缺口说明，不能被
+漂亮分数掩盖。
+
 不把角色分数平均。先按以下顺序裁决：
 
 1. 评审未完成 → `INCOMPLETE`；
 2. 有未关闭 blocker → `BLOCKED`；
 3. 科学类意见不足 → `INSUFFICIENT_SCIENTIFIC_COVERAGE`；
 4. 角色结论显著分歧 → `PANEL_DISAGREEMENT`；
-5. 无 blocker 且均可进入人工复核 → `READY_FOR_HUMAN_SUBMISSION_CHECK`；
-6. 其他 → `REVISION_REQUIRED`。
+5. 任一必需输入未完整审阅 → `REVIEW_COVERAGE_INCOMPLETE`；
+6. 无 blocker、覆盖完整且均可进入人工复核 → `READY_FOR_HUMAN_SUBMISSION_CHECK`；
+7. 其他 → `REVISION_REQUIRED`。
 
 ## 5. Preflight
 

@@ -257,6 +257,102 @@ def test_e_gate_rejects_acceptance_probability(tmp_path):
     assert any("acceptance_probability" in item for item in result["errors"])
 
 
+def test_e_gate_rejects_untracked_reviewer_inputs(tmp_path):
+    work = init_workspace(tmp_path)
+    dump(work / "05-editorial" / "journal-evidence.json", {
+        "complete": True,
+        "selected_journal": "Journal A",
+        "candidates": [{
+            "name": "Journal A", "official_scope_url": "https://example.org/scope",
+            "retrieved_at": "2026-11-22T00:00:00Z",
+        }],
+    })
+    dump(work / "05-editorial" / "reviewer-panel.json", {
+        "complete": True,
+        "reviewers": [
+            {"role": "editor"}, {"role": "domain"}, {"role": "methods"},
+        ],
+        "verdict": forge.READY,
+    })
+    dump(work / "05-editorial" / "submission-preflight.json", {
+        "complete": True, "status": forge.READY, "blockers": [],
+    })
+
+    result = forge.evaluate(work, "E")
+
+    assert not result["passed"]
+    assert any("review coverage" in item for item in result["errors"])
+
+
+def test_e_gate_requires_every_review_input_to_be_reviewed(tmp_path):
+    work = init_workspace(tmp_path)
+    dump(work / "05-editorial" / "journal-evidence.json", {
+        "complete": True,
+        "selected_journal": "Journal A",
+        "candidates": [{
+            "name": "Journal A", "official_scope_url": "https://example.org/scope",
+            "retrieved_at": "2026-11-22T00:00:00Z",
+        }],
+    })
+    coverage = [
+        {"input_id": input_id, "status": "REVIEWED", "evidence_locator": "audit/" + input_id}
+        for input_id in forge.REQUIRED_REVIEW_INPUTS
+    ]
+    coverage[-1] = {
+        "input_id": forge.REQUIRED_REVIEW_INPUTS[-1],
+        "status": "PARTIAL",
+        "evidence_locator": "audit/partial",
+        "reason": "reproducibility record was incomplete",
+    }
+    dump(work / "05-editorial" / "reviewer-panel.json", {
+        "complete": True,
+        "reviewers": [
+            {"role": "editor"}, {"role": "domain"}, {"role": "methods"},
+        ],
+        "review_coverage": coverage,
+        "verdict": forge.READY,
+    })
+    dump(work / "05-editorial" / "submission-preflight.json", {
+        "complete": True, "status": forge.READY, "blockers": [],
+    })
+
+    result = forge.evaluate(work, "E")
+
+    assert not result["passed"]
+    assert any("PARTIAL" in item for item in result["errors"])
+
+
+def test_e_gate_accepts_complete_review_coverage(tmp_path):
+    work = init_workspace(tmp_path)
+    dump(work / "05-editorial" / "journal-evidence.json", {
+        "complete": True,
+        "selected_journal": "Journal A",
+        "candidates": [{
+            "name": "Journal A", "official_scope_url": "https://example.org/scope",
+            "retrieved_at": "2026-11-22T00:00:00Z",
+        }],
+    })
+    dump(work / "05-editorial" / "reviewer-panel.json", {
+        "complete": True,
+        "reviewers": [
+            {"role": "editor"}, {"role": "domain"}, {"role": "methods"},
+        ],
+        "review_coverage": [{
+            "input_id": input_id,
+            "status": "REVIEWED",
+            "evidence_locator": "audit/" + input_id,
+        } for input_id in forge.REQUIRED_REVIEW_INPUTS],
+        "verdict": forge.READY,
+    })
+    dump(work / "05-editorial" / "submission-preflight.json", {
+        "complete": True, "status": forge.READY, "blockers": [],
+    })
+
+    result = forge.evaluate(work, "E")
+
+    assert result["passed"]
+
+
 def test_g_gate_enforces_access_depth_for_quantitative_citation(tmp_path):
     work = init_workspace(tmp_path)
     dump(work / "04-manuscript" / "claim-map.json", {

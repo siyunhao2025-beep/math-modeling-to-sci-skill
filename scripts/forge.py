@@ -49,6 +49,16 @@ ARCHETYPES = {
 DISPOSITIONS = {"retain", "adapt", "supplement", "drop", "pending"}
 MANUSCRIPT_NAMES = ("manuscript.md", "manuscript.tex", "manuscript.docx")
 READY = "READY_FOR_HUMAN_SUBMISSION_CHECK"
+REQUIRED_REVIEW_INPUTS = (
+    "manuscript",
+    "journal_scope",
+    "validation_results",
+    "citation_identity_support",
+    "claim_evidence",
+    "figure_table",
+    "methods_reporting_compliance",
+)
+REVIEW_COVERAGE_STATUSES = {"REVIEWED", "PARTIAL", "MISSING", "SKIPPED"}
 ACCESS_RANK = {"metadata_only": 0, "abstract_only": 1, "full_text": 2, "project_result": 3}
 MIN_ACCESS = {"background": 0, "method": 1, "quantitative": 2, "causal": 2, "mechanistic": 2}
 FINAL_SIZE_TOLERANCE_MM = 0.1
@@ -407,7 +417,14 @@ def template_payloads() -> dict[str, object]:
             "schema_version": "2.0", "complete": False, "selected_journal": "", "candidates": []
         },
         "05-editorial/reviewer-panel.json": {
-            "schema_version": "2.0", "complete": False, "reviewers": [], "verdict": "INCOMPLETE"
+            "schema_version": "2.1", "complete": False, "reviewers": [],
+            "review_coverage": [{
+                "input_id": input_id,
+                "status": "MISSING",
+                "evidence_locator": "",
+                "reason": "review has not yet examined this input",
+            } for input_id in REQUIRED_REVIEW_INPUTS],
+            "verdict": "INCOMPLETE",
         },
         "05-editorial/submission-preflight.json": {
             "schema_version": "2.0", "complete": False, "status": "BLOCKED", "blockers": []
@@ -766,6 +783,52 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
     return errors, warnings
 
 
+def check_review_coverage(panel: dict, errors: list[str]) -> None:
+    coverage = panel.get("review_coverage")
+    if not isinstance(coverage, list):
+        errors.append("review coverage must be a list accounting for every required input")
+        return
+
+    indexed: dict[str, dict] = {}
+    for index, entry in enumerate(coverage):
+        if not isinstance(entry, dict):
+            errors.append(f"review coverage entry {index} must be an object")
+            continue
+        input_id = entry.get("input_id")
+        if input_id not in REQUIRED_REVIEW_INPUTS:
+            errors.append(f"review coverage has unknown input_id {input_id!r}")
+            continue
+        if input_id in indexed:
+            errors.append(f"review coverage has duplicate input_id {input_id!r}")
+            continue
+        indexed[input_id] = entry
+
+    for input_id in REQUIRED_REVIEW_INPUTS:
+        entry = indexed.get(input_id)
+        if entry is None:
+            errors.append(f"review coverage is missing required input {input_id!r}")
+            continue
+        status = entry.get("status")
+        if status not in REVIEW_COVERAGE_STATUSES:
+            errors.append(f"review coverage {input_id!r} has invalid status {status!r}")
+            continue
+        locator = entry.get("evidence_locator")
+        reason = entry.get("reason")
+        if status == "REVIEWED":
+            if not isinstance(locator, str) or not locator.strip():
+                errors.append(
+                    f"review coverage {input_id!r} is REVIEWED but has no evidence_locator"
+                )
+        else:
+            if not isinstance(reason, str) or not reason.strip():
+                errors.append(
+                    f"review coverage {input_id!r} is {status} but has no reason"
+                )
+            errors.append(
+                f"review coverage {input_id!r} is {status}; reviewer panel cannot be {READY}"
+            )
+
+
 def gate_e(root: Path) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -789,6 +852,7 @@ def gate_e(root: Path) -> tuple[list[str], list[str]]:
     roles = [x.get("role") for x in reviewers]
     if len(set(roles)) != len(roles) or any(not x for x in roles):
         errors.append("reviewer roles must be non-empty and distinct")
+    check_review_coverage(panel, errors)
     verdict = panel.get("verdict")
     if verdict != READY:
         errors.append(f"reviewer panel verdict is not {READY}: {verdict!r}")
