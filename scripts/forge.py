@@ -59,6 +59,12 @@ REQUIRED_REVIEW_INPUTS = (
     "methods_reporting_compliance",
 )
 REVIEW_COVERAGE_STATUSES = {"REVIEWED", "PARTIAL", "MISSING", "SKIPPED"}
+REVIEW_COMMENT_SEVERITIES = {"blocker", "major", "minor"}
+RESPONSE_DISPOSITIONS = {
+    "REVISED",
+    "EVIDENCE_BASED_REBUTTAL",
+    "AUTHOR_ACCEPTED_LIMITATION",
+}
 ACCESS_RANK = {"metadata_only": 0, "abstract_only": 1, "full_text": 2, "project_result": 3}
 MIN_ACCESS = {"background": 0, "method": 1, "quantitative": 2, "causal": 2, "mechanistic": 2}
 FINAL_SIZE_TOLERANCE_MM = 0.1
@@ -417,13 +423,15 @@ def template_payloads() -> dict[str, object]:
             "schema_version": "2.0", "complete": False, "selected_journal": "", "candidates": []
         },
         "05-editorial/reviewer-panel.json": {
-            "schema_version": "2.1", "complete": False, "reviewers": [],
+            "schema_version": "2.2", "complete": False, "reviewers": [],
             "review_coverage": [{
                 "input_id": input_id,
                 "status": "MISSING",
                 "evidence_locator": "",
                 "reason": "review has not yet examined this input",
             } for input_id in REQUIRED_REVIEW_INPUTS],
+            "comments": [],
+            "responses": [],
             "verdict": "INCOMPLETE",
         },
         "05-editorial/submission-preflight.json": {
@@ -829,6 +837,94 @@ def check_review_coverage(panel: dict, errors: list[str]) -> None:
             )
 
 
+def check_response_coverage(panel: dict, errors: list[str]) -> None:
+    """Require one auditable disposition for every substantive reviewer comment.
+
+    This is an exact-ID coverage check, not a judgement of whether the response is
+    persuasive or the cited manuscript change is scientifically adequate.
+    """
+    comments = panel.get("comments")
+    if not isinstance(comments, list):
+        errors.append("response coverage needs a reviewer comments list")
+        return
+    if not 3 <= len(comments) <= 5:
+        errors.append("response coverage needs 3-5 substantive reviewer comments")
+
+    indexed_comments: dict[str, dict] = {}
+    actionable: set[str] = set()
+    for index, comment in enumerate(comments):
+        if not isinstance(comment, dict):
+            errors.append(f"review comment {index} must be an object")
+            continue
+        comment_id = comment.get("id")
+        if not isinstance(comment_id, str) or not comment_id.strip():
+            errors.append(f"review comment {index} needs a non-empty id")
+            continue
+        if comment_id in indexed_comments:
+            errors.append(f"review comments have duplicate id {comment_id!r}")
+            continue
+        indexed_comments[comment_id] = comment
+        severity = comment.get("severity")
+        if severity not in REVIEW_COMMENT_SEVERITIES:
+            errors.append(f"review comment {comment_id!r} has invalid severity {severity!r}")
+        if not isinstance(comment.get("location"), str) or not comment["location"].strip():
+            errors.append(f"review comment {comment_id!r} needs a location")
+        if not isinstance(comment.get("objection"), str) or not comment["objection"].strip():
+            errors.append(f"review comment {comment_id!r} needs an objection")
+        actionable.add(comment_id)
+
+    responses = panel.get("responses")
+    if not isinstance(responses, list):
+        errors.append("response coverage must be a list keyed by reviewer comment id")
+        return
+
+    indexed_responses: dict[str, dict] = {}
+    for index, response in enumerate(responses):
+        if not isinstance(response, dict):
+            errors.append(f"review response {index} must be an object")
+            continue
+        comment_id = response.get("comment_id")
+        if comment_id not in indexed_comments:
+            errors.append(f"response coverage has unknown comment_id {comment_id!r}")
+            continue
+        if comment_id in indexed_responses:
+            errors.append(f"response coverage has duplicate comment_id {comment_id!r}")
+            continue
+        indexed_responses[comment_id] = response
+
+        disposition = response.get("disposition")
+        if disposition not in RESPONSE_DISPOSITIONS:
+            errors.append(
+                f"response coverage {comment_id!r} has invalid disposition {disposition!r}"
+            )
+        if not isinstance(response.get("response"), str) or not response["response"].strip():
+            errors.append(f"response coverage {comment_id!r} needs response text")
+        if disposition == "REVISED":
+            if (not isinstance(response.get("change_locator"), str)
+                    or not response["change_locator"].strip()):
+                errors.append(f"response coverage {comment_id!r} REVISED needs change_locator")
+        elif disposition == "EVIDENCE_BASED_REBUTTAL":
+            if (not isinstance(response.get("evidence_locator"), str)
+                    or not response["evidence_locator"].strip()):
+                errors.append(
+                    f"response coverage {comment_id!r} EVIDENCE_BASED_REBUTTAL needs "
+                    "evidence_locator"
+                )
+        elif disposition == "AUTHOR_ACCEPTED_LIMITATION":
+            if not isinstance(response.get("reason"), str) or not response["reason"].strip():
+                errors.append(
+                    f"response coverage {comment_id!r} AUTHOR_ACCEPTED_LIMITATION needs reason"
+                )
+            if response.get("author_approved") is not True:
+                errors.append(
+                    f"response coverage {comment_id!r} AUTHOR_ACCEPTED_LIMITATION needs "
+                    "author_approved=true"
+                )
+
+    for comment_id in sorted(actionable - set(indexed_responses)):
+        errors.append(f"response coverage is missing reviewer comment {comment_id!r}")
+
+
 def gate_e(root: Path) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -853,6 +949,7 @@ def gate_e(root: Path) -> tuple[list[str], list[str]]:
     if len(set(roles)) != len(roles) or any(not x for x in roles):
         errors.append("reviewer roles must be non-empty and distinct")
     check_review_coverage(panel, errors)
+    check_response_coverage(panel, errors)
     verdict = panel.get("verdict")
     if verdict != READY:
         errors.append(f"reviewer panel verdict is not {READY}: {verdict!r}")

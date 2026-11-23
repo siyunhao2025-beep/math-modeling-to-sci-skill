@@ -342,6 +342,26 @@ def test_e_gate_accepts_complete_review_coverage(tmp_path):
             "status": "REVIEWED",
             "evidence_locator": "audit/" + input_id,
         } for input_id in forge.REQUIRED_REVIEW_INPUTS],
+        "comments": [
+            {"id": "R1.1", "severity": "major", "location": "Methods, paragraph 3",
+             "objection": "The baseline window is not justified."},
+            {"id": "R2.1", "severity": "minor", "location": "Discussion, paragraph 2",
+             "objection": "The alternative explanation needs an explicit comparison."},
+            {"id": "R3.1", "severity": "minor", "location": "Results, Figure 2",
+             "objection": "The uncertainty definition should be repeated in the caption."},
+        ],
+        "responses": [
+            {"comment_id": "R1.1", "disposition": "REVISED",
+             "response": "We now justify the window against the preregistered sensitivity run.",
+             "change_locator": "Methods, paragraph 3"},
+            {"comment_id": "R2.1", "disposition": "EVIDENCE_BASED_REBUTTAL",
+             "response": "The proposed explanation is inconsistent with the registered ablation.",
+             "evidence_locator": "03-revalidation/validation-results.json#run-A4"},
+            {"comment_id": "R3.1", "disposition": "AUTHOR_ACCEPTED_LIMITATION",
+             "response": "We retain this wording and state the interpretation boundary explicitly.",
+             "reason": "The caption follows the target journal's fixed figure-word budget.",
+             "author_approved": True},
+        ],
         "verdict": forge.READY,
     })
     dump(work / "05-editorial" / "submission-preflight.json", {
@@ -351,6 +371,91 @@ def test_e_gate_accepts_complete_review_coverage(tmp_path):
     result = forge.evaluate(work, "E")
 
     assert result["passed"]
+
+
+def test_e_gate_rejects_unanswered_reviewer_comment(tmp_path):
+    work = init_workspace(tmp_path)
+    dump(work / "05-editorial" / "journal-evidence.json", {
+        "complete": True,
+        "selected_journal": "Journal A",
+        "candidates": [{
+            "name": "Journal A", "official_scope_url": "https://example.org/scope",
+            "retrieved_at": "2026-11-23T00:00:00Z",
+        }],
+    })
+    dump(work / "05-editorial" / "reviewer-panel.json", {
+        "complete": True,
+        "reviewers": [
+            {"role": "editor"}, {"role": "domain"}, {"role": "methods"},
+        ],
+        "review_coverage": [{
+            "input_id": input_id,
+            "status": "REVIEWED",
+            "evidence_locator": "audit/" + input_id,
+        } for input_id in forge.REQUIRED_REVIEW_INPUTS],
+        "comments": [{
+            "id": "R1.1", "severity": "major", "location": "Methods, paragraph 3",
+            "objection": "The baseline window is not justified.",
+        }],
+        "responses": [],
+        "verdict": forge.READY,
+    })
+    dump(work / "05-editorial" / "submission-preflight.json", {
+        "complete": True, "status": forge.READY, "blockers": [],
+    })
+
+    result = forge.evaluate(work, "E")
+
+    assert not result["passed"]
+    assert any("response coverage" in item and "R1.1" in item
+               for item in result["errors"])
+
+
+def test_e_gate_rejects_duplicate_and_extra_response_ids(tmp_path):
+    work = init_workspace(tmp_path)
+    dump(work / "05-editorial" / "journal-evidence.json", {
+        "complete": True,
+        "selected_journal": "Journal A",
+        "candidates": [{
+            "name": "Journal A", "official_scope_url": "https://example.org/scope",
+            "retrieved_at": "2026-11-23T00:00:00Z",
+        }],
+    })
+    dump(work / "05-editorial" / "reviewer-panel.json", {
+        "complete": True,
+        "reviewers": [
+            {"role": "editor"}, {"role": "domain"}, {"role": "methods"},
+        ],
+        "review_coverage": [{
+            "input_id": input_id,
+            "status": "REVIEWED",
+            "evidence_locator": "audit/" + input_id,
+        } for input_id in forge.REQUIRED_REVIEW_INPUTS],
+        "comments": [{
+            "id": "R1.1", "severity": "major", "location": "Methods, paragraph 3",
+            "objection": "The baseline window is not justified.",
+        }],
+        "responses": [
+            {"comment_id": "R1.1", "disposition": "REVISED",
+             "response": "We now justify the window.",
+             "change_locator": "Methods, paragraph 3"},
+            {"comment_id": "R1.1", "disposition": "REVISED",
+             "response": "A duplicate response must not be silently accepted.",
+             "change_locator": "Methods, paragraph 3"},
+            {"comment_id": "R9.9", "disposition": "REVISED",
+             "response": "This response has no matching comment.",
+             "change_locator": "Methods, paragraph 9"},
+        ],
+        "verdict": forge.READY,
+    })
+    dump(work / "05-editorial" / "submission-preflight.json", {
+        "complete": True, "status": forge.READY, "blockers": [],
+    })
+
+    errors = forge.evaluate(work, "E")["errors"]
+
+    assert any("duplicate comment_id 'R1.1'" in item for item in errors)
+    assert any("unknown comment_id 'R9.9'" in item for item in errors)
 
 
 def test_g_gate_enforces_access_depth_for_quantitative_citation(tmp_path):
