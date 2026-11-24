@@ -238,6 +238,41 @@ python scripts/readiness/result_trace.py --ledger result-trace.json \
 模型、不验证输入真实性，也不证明模型有效或科研结论正确。`PASS` 仍须与本矩阵对应原型的
 再验证、主张—证据审计和人工复核同时成立。
 
+## 12. Claim-impact validation triage / 主张影响式验证收敛
+
+完成相应原型的最低验证后，不以“还能再跑一次”为由无限追加实验。每次拟新增验证运行前，
+先绑定一条精确主张及其证据上限，区分实现正确性、随机波动、数值充分性、模型形式和外部失配，
+再问：候选测试的不同可信结果是否会改变这条主张。实现正确性检查是底线，不得以节省计算为由
+跳过；本节也不替代前述各原型的最低验证。
+
+使用 `schema_version: "1.0"` 的 JSON 记录：
+
+- `claim`：稳定 `claim_id`、原文、`level` 与 `evidence_ceiling`；
+- `minimum_obligations` 与 `implementation_correctness`：完成状态及证据定位；
+- `uncertainty_classes`：每类不确定性的现有证据和决策相关性；
+- `decision_boundary` 与 `scale_comparison`：把效应/决策边界与估计不确定性放在同一报告单位；
+  无法量化比较时用 `NOT_COMPARABLE` 并说明原因，不伪造比值；
+- `proposed_test`：候选测试、所针对的不确定性和至少两个可信结果分支；每个分支写明
+  `direction`（至少含一个不利分支）、`claim_impact`（`NONE / NARROW / WITHDRAW / ESCALATE`）
+  及相应措辞动作；
+- `decision`：只能是 `STOP_AND_REPORT`、`BOUNDED_VALIDATION`、`CLAIM_NOT_SUPPORTED` 或
+  `HUMAN_ADJUDICATION`。
+
+`STOP_AND_REPORT` 只在最低验证完成、实现正确性为 `PASS`，且所有已声明结果分支均不改变主张
+时成立。`BOUNDED_VALIDATION` 必须至少有一个会改变主张的结果分支，并预先写明有限预算和停止
+规则；实现正确性已失败时，下一测试必须直接处理该失败。`CLAIM_NOT_SUPPORTED` 必须明确收窄
+或撤回及替代措辞；停止、收窄或撤回还须作者确认。`HUMAN_ADJUDICATION` 必须登记责任人和
+待裁决问题。运行：
+
+```bash
+python scripts/readiness/validation_triage.py --triage validation-triage.json \
+  --out 03-revalidation/validation-triage-audit.json
+```
+
+输出 `CONTRACT_VALID` 只表示声明的分支、停止规则和处置在结构上自洽。审计器不执行模型、
+不检查证据真假、不证明结果分支已经穷尽、不选科学阈值，也不把“无需再跑”升级成模型有效、
+科研主张成立或稿件可发布。
+
 ## 主张—验证配对
 
 | 主张类型 | 最低证据 | 常见第二证据 |

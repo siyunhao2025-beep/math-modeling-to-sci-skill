@@ -72,6 +72,7 @@ def main() -> int:
         "scripts/readiness/submission_preflight.py",
         "scripts/readiness/pipeline_bridge.py",
         "scripts/readiness/run_readiness.py",
+        "scripts/readiness/validation_triage.py",
         ".github/workflows/ci.yml",
         ".github/workflows/validate-skill.yml",
     ]
