@@ -363,3 +363,15 @@ hooks、第三方脚本、模型运行或外部服务。
 有限预算和处置是否自洽。`CONTRACT_VALID` 不证明结果、模型或主张正确；最低验证和实现正确性
 不能由该工具豁免。数模成果转 SCI 定位、FORGE × TRACE、证据与主张上限、引用双检、旧
 S1–S8、零静默损失和四种顶层状态均未改变。
+
+## 2026-11-27 旧 S5 图框放行复核
+
+技术参考是 [linmoxi33/paper-orchestra-figure-reconcile 的锁定提交](https://github.com/linmoxi33/paper-orchestra-figure-reconcile/tree/85a83a1e03709084c69a2612cd3aefc1e353a7d8)。
+根许可证 MIT；2026-11-27 10:22:20（Asia/Shanghai）实测 0★。静态阅读了入口
+`bin/figreconcile` 与 `tests/test_cli.py`，其回归区分了已提供但在 LaTeX 中未使用的图与有效图件。
+
+本仓只采纳“交付物要回查实际入稿图件，不能用资产存在代替”的原则，并在既有 S8 审计中
+独立识别本仓旧 S5 产生的图注/标签空壳。源文件虽在工作区，空壳仍须阻断投稿前检查。
+不解析任意 LaTeX 宏，不重链接、重画、改写图件或扩大文件读取权限；现有模板、旧阶段、
+FORGE × TRACE、事实边界和人工渲染审查不变。未复制第三方工具、提示词、素材或测试，
+没有引入依赖、调用第三方脚本或外部服务。

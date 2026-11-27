@@ -11,8 +11,10 @@ if str(SCRIPTS) not in sys.path:
 
 from readiness.claim_evidence import run as claim_run  # noqa: E402
 from readiness.compliance_audit import run as compliance_run  # noqa: E402
+from readiness.figure_table_audit import run as figure_run  # noqa: E402
 from readiness.reference_verifier import normalize_doi, source_coverage, verify_entry  # noqa: E402
 from readiness.submission_preflight import run as preflight_run  # noqa: E402
+from render import render_figures  # noqa: E402
 
 
 def dump(path: Path, data):
@@ -88,6 +90,29 @@ def test_claim_evidence_blocks_unsupported_causal_claim(tmp_path):
     result = claim_run(str(inp), str(out))
     assert result["summary"]["claims_reviewed"] == 1
     assert result["blockers"] == ["claim-1"]
+
+
+def test_s5_figure_shell_blocks_readiness_without_rewriting_build(tmp_path):
+    figure = {"id": "F1", "path": "figure.pdf", "caption": "Model results under fixed conditions",
+              "referenced_in": ["results"]}
+    ir = tmp_path / "manuscript.ir.json"
+    build = tmp_path / "main.tex"
+    out = tmp_path / "08-readiness/figure-table-audit.json"
+    dump(ir, {"figures": [figure]})
+    (tmp_path / figure["path"]).touch()
+    original = render_figures([figure])
+    build.write_text(original, encoding="utf-8")
+
+    result = figure_run(str(ir), str(out), str(build), str(tmp_path))
+    assert [(x["code"], x["object"]) for x in result["blockers"]] == [
+        ("BUILD_FIGURE_PLACEHOLDER", "F1"),
+    ]
+    assert result["visual_scientific_review"] == "PENDING_AGENT_REVIEW"
+    assert build.read_text(encoding="utf-8") == original
+
+    # A custom graphic can leave the S5 source comment in place.
+    build.write_text(original.replace(r"\caption", "\\customplot\n  \\caption"), encoding="utf-8")
+    assert not figure_run(str(ir), str(out), str(build), str(tmp_path))["blockers"]
 
 
 def test_compliance_flags_missing_human_ethics(tmp_path):

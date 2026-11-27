@@ -5,6 +5,7 @@
 Review every figure/table as evidence, not decoration. A figure that exists and compiles can still mislead a reviewer.
 
 Run `scripts/readiness/figure_table_audit.py` first, then visually/scientifically inspect every object.
+A caption and label from the legacy S5 LaTeX scaffold do not establish that the figure is present. With the build source supplied, `BUILD_FIGURE_PLACEHOLDER` blocks readiness until the original or an approved traceable graphic is placed and the rendered manuscript is reviewed. The check only recognizes the unfilled S5 pattern; absence of this finding does not verify a custom macro, included file, or final rendering.
 
 ## Figure checklist
 
