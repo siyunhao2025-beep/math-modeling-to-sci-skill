@@ -12,6 +12,7 @@ Eliminate fabricated, malformed, stale or contextually wrong citations before su
 4. If providers disagree materially, mark `CONFLICT`; do not silently pick the convenient record.
 5. In strict mode, only API-verified references enter `references.clean.bib`.
 6. A reference without a DOI may be retained only after authoritative source verification by the Agent and explicit author approval; record why DOI verification is unavailable.
+7. Preserve the generated `source_coverage` ledger. For every supplied reference it separates planned providers, actual attempts, successful matches, successful zero-hit responses, failures and identifier-based skips. Never turn an absent attempt or request failure into a zero result.
 
 ## Phase B — contextual citation support
 
@@ -63,3 +64,5 @@ Write `08-readiness/citation-support-audit.json` with:
 ```
 
 `CONTRADICTS` and `DOES_NOT_SUPPORT` are hard blockers. `CANNOT_VERIFY` requires author review unless the claim is removed.
+
+The bibliographic output `08-readiness/reference-verification.json` separately contains `source_coverage` at the run and reference levels. That ledger proves only which provider outcomes were recorded for the supplied bibliography. It does not establish exhaustive literature discovery or contextual support.

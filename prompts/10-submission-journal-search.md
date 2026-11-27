@@ -81,6 +81,7 @@ constraints:
 | 字段 | 要求 |
 |---|---|
 | Journal | 正式刊名 |
+| Identity key | 优先使用校验通过的 ISSN/eISSN；同名、改名或版本歧义未解决时不得合并 |
 | Publisher / Society | 当前出版方 |
 | Official URL | 官方主页 |
 | Aims & Scope | 与稿件相关的范围证据 |
@@ -93,7 +94,9 @@ constraints:
 | Template | Word/LaTeX 官方模板 |
 | Submission system | 当前投稿入口 |
 | Review-time claim | 只有可核验时提供，并标明来源类型 |
-| Retrieved | 核验日期 |
+| Source class | `official_requirement` 或 `observed_pattern`，两者不得互相替代 |
+| Checked at | 带时区的核验时间 |
+| Freshness | `CURRENT / STALE / UNVERIFIED`，并记录项目自定的最大证据年龄 |
 
 ### 来源优先级
 
@@ -103,6 +106,18 @@ constraints:
 4. 可靠第三方统计。
 
 如果两个来源冲突，以官方当前规则为主，并把冲突写入 `journal-evidence/`。
+
+### 身份与时效硬约束
+
+- 期刊身份优先按校验通过的 ISSN/eISSN 锁定；只有刊名或搜索结果相似时，保持
+  `UNRESOLVED`，进入 `AUTHOR_ACTION_REQUIRED`，不得把两个刊或更名前后版本静默合并。
+- Aims & Scope、article type、模板、投稿入口、APC、收录状态与披露政策属于
+  `official_requirement`。每项必须带官方 URL、`checked_at` 和项目显式选择的
+  `max_evidence_age_days`。这个天数是工作流刷新阈值，不是期刊规则稳定性的科学结论。
+- 近期论文题名、摘要和版式归为 `observed_pattern`。它们可以帮助判断主题与写作惯例，
+  但不能证明当前投稿规则，也不能把 `STALE / UNVERIFIED` 的官方字段升级为通过。
+- 未来时间、无时区时间、超过刷新阈值或未记录核验时间一律不得用于硬过滤通过；
+  相关候选只能保留为待核验项，不能进入投稿就绪状态。
 
 ---
 
@@ -246,6 +261,7 @@ submission_portal:
 
 ### 期刊规范
 - article type；
+- 期刊身份已解析，影响硬过滤的官方事实均为 `CURRENT`，近期论文模式未被当作官方规则；
 - 字数；
 - 摘要；
 - 关键词；

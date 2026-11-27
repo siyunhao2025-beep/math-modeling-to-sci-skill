@@ -17,6 +17,18 @@ Read:
 - figure/table audit;
 - methods/reporting/ethics compliance audit.
 
+Before scoring or drafting comments, record a machine-readable `review_coverage` ledger. It must account exactly once for these input IDs:
+
+- `manuscript`
+- `journal_scope`
+- `validation_results`
+- `citation_identity_support`
+- `claim_evidence`
+- `figure_table`
+- `methods_reporting_compliance`
+
+For each input use `REVIEWED`, `PARTIAL`, `MISSING` or `SKIPPED`. `REVIEWED` requires an `evidence_locator`; every other status requires a specific reason. Do not infer review from file existence. A review may still describe what it could assess, but it cannot emit `READY_FOR_HUMAN_SUBMISSION_CHECK` until every required input is `REVIEWED`.
+
 ## Reviewer panel
 
 Evaluate from four independent perspectives:
@@ -41,7 +53,6 @@ Each comment must contain:
 - what would satisfy the reviewer;
 - `requires_author_data`: true/false;
 - safe revision plan;
-- response-to-reviewer draft;
 - status: `OPEN` / `RESOLVED` / `AUTHOR_DECISION`.
 
 Do not fill the list with grammar issues. At least 3 comments must concern scientific content, evidence, methods, fit or interpretation.
@@ -70,6 +81,19 @@ Draft a response using:
 
 Use professional disagreement when appropriate. Do not automatically concede a reviewer premise if the manuscript evidence does not support it.
 
+Record the response separately from the comment and key it by the stable comment ID. Every
+comment must have exactly one response before the panel can emit
+`READY_FOR_HUMAN_SUBMISSION_CHECK`; duplicate IDs, responses to unknown comments and missing
+responses are blockers. Use one disposition:
+
+- `REVISED`: include the response and the exact `change_locator`;
+- `EVIDENCE_BASED_REBUTTAL`: include the response and the supporting `evidence_locator`;
+- `AUTHOR_ACCEPTED_LIMITATION`: include the response, a concrete reason and
+  `author_approved: true`.
+
+This ledger checks exact coverage and traceable disposition. It does not decide whether a response
+is persuasive, whether a cited manuscript change is adequate or whether the author should accept a limitation.
+
 ## Cover letter
 
 Only after blocker/major comments are resolved or explicitly accepted by the author, prepare a cover-letter draft grounded in verified manuscript facts and current journal fit. Do not claim novelty priority, exclusivity, ethics status or non-simultaneous submission unless confirmed.
@@ -82,7 +106,25 @@ Write `08-readiness/reviewer-simulation.json`:
 {
   "round": 1,
   "journal": "...",
-  "comments": [],
+  "review_coverage": [
+    {"input_id": "manuscript", "status": "REVIEWED", "evidence_locator": "04-manuscript/manuscript.md", "reason": ""},
+    {"input_id": "journal_scope", "status": "REVIEWED", "evidence_locator": "05-editorial/journal-evidence.json", "reason": ""},
+    {"input_id": "validation_results", "status": "REVIEWED", "evidence_locator": "03-revalidation/validation-results.json", "reason": ""},
+    {"input_id": "citation_identity_support", "status": "REVIEWED", "evidence_locator": "04-manuscript/citation-audit.json", "reason": ""},
+    {"input_id": "claim_evidence", "status": "REVIEWED", "evidence_locator": "04-manuscript/claim-map.json", "reason": ""},
+    {"input_id": "figure_table", "status": "REVIEWED", "evidence_locator": "04-manuscript/figure-manifest.json", "reason": ""},
+    {"input_id": "methods_reporting_compliance", "status": "REVIEWED", "evidence_locator": "audit/methods-compliance.md", "reason": ""}
+  ],
+  "comments": [
+    {"id": "RS-1", "persona": "methods_statistics_reviewer", "severity": "major", "location": "Methods, paragraph 3", "objection": "...", "requires_author_data": false, "revision_plan": "...", "status": "RESOLVED"},
+    {"id": "RS-2", "persona": "domain_reviewer", "severity": "minor", "location": "Discussion, paragraph 2", "objection": "...", "requires_author_data": false, "revision_plan": "...", "status": "RESOLVED"},
+    {"id": "RS-3", "persona": "skeptical_reviewer", "severity": "major", "location": "Results, Figure 2", "objection": "...", "requires_author_data": false, "revision_plan": "...", "status": "AUTHOR_DECISION"}
+  ],
+  "responses": [
+    {"comment_id": "RS-1", "disposition": "REVISED", "response": "...", "change_locator": "Methods, paragraph 3"},
+    {"comment_id": "RS-2", "disposition": "EVIDENCE_BASED_REBUTTAL", "response": "...", "evidence_locator": "03-revalidation/validation-results.json#run-A4"},
+    {"comment_id": "RS-3", "disposition": "AUTHOR_ACCEPTED_LIMITATION", "response": "...", "reason": "...", "author_approved": true}
+  ],
   "summary": {
     "blockers_open": 0,
     "major_open": 0,
@@ -91,5 +133,11 @@ Write `08-readiness/reviewer-simulation.json`:
   "cover_letter_status": "NOT_READY"
 }
 ```
+
+When running inside a FORGE workspace, mirror both ledgers (`review_coverage` and the exact-ID
+`comments`/`responses`) into `05-editorial/reviewer-panel.json`. In the human-readable review,
+include a “What this simulated review did not have” section generated from every non-`REVIEWED`
+input row and an “Unanswered reviewer comments” section generated from response-coverage gaps.
+Never hide a missing input or response behind a polished verdict.
 
 Simulated comments are never described as actual peer-review reports and must not be assigned an acceptance probability.

@@ -12,6 +12,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from readiness.utils import ir_text, load_json, save_json  # noqa: E402
 
 
+# ponytail: match only the S5 caption-only scaffold; other TeX, macros and
+# included files need rendered inspection, not an inferred missing graphic.
+S5_FIGURE_PLACEHOLDER = re.compile(
+    r"^[ \t]*\\begin\{figure\}\[htbp\][ \t]*\n"
+    r"[ \t]*\\centering[ \t]*\n"
+    r"[ \t]*% 图源:[^\n]*\n"
+    r"[ \t]*\\caption\{[^\n]*\}[ \t]*\n"
+    r"[ \t]*\\label\{fig:([^{}\n]+)\}[ \t]*\n"
+    r"[ \t]*\\end\{figure\}[ \t]*$",
+    re.MULTILINE,
+)
+
+
 def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s or "").strip()
 
@@ -20,6 +33,7 @@ def run(ir_path: str, out: str, build_tex: str | None = None, source_root: str |
     ir = load_json(ir_path)
     text = ir_text(ir)
     build = Path(build_tex).read_text(encoding="utf-8") if build_tex and Path(build_tex).is_file() else ""
+    figure_shells = set(S5_FIGURE_PLACEHOLDER.findall(build))
     root = Path(source_root) if source_root else Path(ir_path).resolve().parent
     items = []
 
@@ -36,6 +50,12 @@ def run(ir_path: str, out: str, build_tex: str | None = None, source_root: str |
         if not refs:
             issues.append({"code": "NOT_REFERENCED_IN_IR", "severity": "warning"})
         if kind == "figure":
+            if oid in figure_shells:
+                issues.append({
+                    "code": "BUILD_FIGURE_PLACEHOLDER",
+                    "severity": "blocker",
+                    "detail": "S5 left a caption and label but no graphic in this figure.",
+                })
             if not source:
                 issues.append({"code": "FIGURE_SOURCE_MISSING", "severity": "blocker"})
             elif source_root:

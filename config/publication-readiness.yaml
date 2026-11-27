@@ -139,3 +139,4 @@ preflight:
   optional_artifacts:
     - 08-readiness/language-audit.json
     - 08-readiness/similarity-precheck.json
+    - 08-readiness/journal-style-profile.json

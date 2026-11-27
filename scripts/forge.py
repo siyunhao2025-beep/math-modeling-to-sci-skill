@@ -10,12 +10,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shutil
 import sys
 import tempfile
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 
 PHASES = ("F", "O", "R", "G", "E")
@@ -47,8 +49,42 @@ ARCHETYPES = {
 DISPOSITIONS = {"retain", "adapt", "supplement", "drop", "pending"}
 MANUSCRIPT_NAMES = ("manuscript.md", "manuscript.tex", "manuscript.docx")
 READY = "READY_FOR_HUMAN_SUBMISSION_CHECK"
+REQUIRED_REVIEW_INPUTS = (
+    "manuscript",
+    "journal_scope",
+    "validation_results",
+    "citation_identity_support",
+    "claim_evidence",
+    "figure_table",
+    "methods_reporting_compliance",
+)
+REVIEW_COVERAGE_STATUSES = {"REVIEWED", "PARTIAL", "MISSING", "SKIPPED"}
+REVIEW_COMMENT_SEVERITIES = {"blocker", "major", "minor"}
+RESPONSE_DISPOSITIONS = {
+    "REVISED",
+    "EVIDENCE_BASED_REBUTTAL",
+    "AUTHOR_ACCEPTED_LIMITATION",
+}
 ACCESS_RANK = {"metadata_only": 0, "abstract_only": 1, "full_text": 2, "project_result": 3}
 MIN_ACCESS = {"background": 0, "method": 1, "quantitative": 2, "causal": 2, "mechanistic": 2}
+FINAL_SIZE_TOLERANCE_MM = 0.1
+SEMANTIC_FIGURE_TYPES = {"roadmap", "schematic"}
+EDITABLE_FIGURE_FORMATS = {"svg", "drawio", "pptx"}
+SEMANTIC_OBJECT_KINDS = {"node", "group", "label", "connector"}
+CONTENT_DISPOSITIONS = {"retained", "merged", "omitted"}
+VERIFICATION_DEPTHS = ("text_bound", "source_bound", "execution_bound", "render_bound")
+VERIFICATION_RANK = {name: rank for rank, name in enumerate(VERIFICATION_DEPTHS)}
+MIN_GATE_G_VERIFICATION = "source_bound"
+INTEGRITY_STATUSES = {
+    "NO_SIGNAL_FOUND", "RETRACTED", "WITHDRAWN", "REMOVED",
+    "EXPRESSION_OF_CONCERN", "CORRECTED", "NOT_CHECKED",
+}
+FATAL_INTEGRITY_STATUSES = {
+    "RETRACTED", "WITHDRAWN", "REMOVED", "EXPRESSION_OF_CONCERN",
+}
+CORRECTION_EFFECTS = {
+    "NOT_APPLICABLE", "UNAFFECTED", "AFFECTS_CITED_CONTENT", "UNKNOWN",
+}
 
 
 def now() -> str:
@@ -61,6 +97,81 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def is_sha256(value: object) -> bool:
+    return (isinstance(value, str) and len(value) == 64
+            and value == value.lower()
+            and all(char in "0123456789abcdef" for char in value))
+
+
+def is_positive_number(value: object) -> bool:
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(float(value)) and value > 0)
+
+
+def is_timezone_aware_timestamp(value: object) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None and parsed.utcoffset() is not None
+
+
+def is_https_url(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    parsed = urlparse(value)
+    return parsed.scheme == "https" and bool(parsed.netloc)
+
+
+def check_publication_integrity(cite: dict, citation_id: object, errors: list[str]) -> None:
+    status = cite.get("integrity_status")
+    effect = cite.get("correction_effect")
+    if status not in INTEGRITY_STATUSES:
+        errors.append(f"citation {citation_id!r} has invalid integrity_status {status!r}")
+        return
+    if effect not in CORRECTION_EFFECTS:
+        errors.append(f"citation {citation_id!r} has invalid correction_effect {effect!r}")
+
+    if status == "NOT_CHECKED":
+        errors.append(f"citation {citation_id!r} integrity_status NOT_CHECKED requires author action")
+        return
+
+    if not is_https_url(cite.get("integrity_source_url")):
+        errors.append(f"citation {citation_id!r} needs an HTTPS integrity_source_url")
+    if not is_timezone_aware_timestamp(cite.get("integrity_checked_at")):
+        errors.append(
+            f"citation {citation_id!r} integrity_checked_at must be a timezone-aware ISO-8601 timestamp"
+        )
+
+    if status in FATAL_INTEGRITY_STATUSES:
+        errors.append(f"citation {citation_id!r} has blocking integrity_status {status}")
+        return
+
+    if status == "CORRECTED":
+        if effect == "AFFECTS_CITED_CONTENT":
+            errors.append(
+                f"citation {citation_id!r} correction_effect AFFECTS_CITED_CONTENT blocks support"
+            )
+        elif effect == "UNKNOWN":
+            errors.append(f"citation {citation_id!r} correction_effect UNKNOWN requires author action")
+        elif effect == "UNAFFECTED":
+            if not is_https_url(cite.get("correction_locator")):
+                errors.append(
+                    f"citation {citation_id!r} needs an HTTPS correction_locator for CORRECTED"
+                )
+        else:
+            errors.append(
+                f"citation {citation_id!r} CORRECTED requires correction_effect "
+                "UNAFFECTED, AFFECTS_CITED_CONTENT or UNKNOWN"
+            )
+    elif effect != "NOT_APPLICABLE":
+        errors.append(
+            f"citation {citation_id!r} may use correction_effect {effect!r} only with CORRECTED"
+        )
 
 
 def write_json(path: Path, payload: object) -> None:
@@ -86,6 +197,180 @@ def inside(root: Path, candidate: Path) -> bool:
         return True
     except (ValueError, OSError):
         return False
+
+
+def check_editable_artifact(
+        root: Path, fig: dict, errors: list[str], warnings: list[str]) -> None:
+    """Validate an optional semantic editing contract for roadmap/schematic figures."""
+    figure_id = fig.get("figure_id")
+    figure_type = fig.get("figure_type")
+    if figure_type is None:
+        return
+    if figure_type not in {"data", *SEMANTIC_FIGURE_TYPES}:
+        errors.append(f"figure {figure_id!r} has invalid figure_type {figure_type!r}")
+        return
+    if figure_type not in SEMANTIC_FIGURE_TYPES:
+        return
+
+    artifact = fig.get("editable_artifact")
+    if artifact is None:
+        warnings.append(
+            f"figure {figure_id!r} is a {figure_type} without editable_artifact; "
+            "local object-level revision cannot be checked"
+        )
+        return
+    if not isinstance(artifact, dict):
+        errors.append(f"figure {figure_id!r} editable_artifact must be an object")
+        return
+
+    source = artifact.get("source")
+    fmt = artifact.get("format")
+    if fmt not in EDITABLE_FIGURE_FORMATS:
+        errors.append(
+            f"figure {figure_id!r} editable_artifact.format must be one of "
+            f"{sorted(EDITABLE_FIGURE_FORMATS)}"
+        )
+    if not isinstance(source, str) or not source.strip():
+        errors.append(f"figure {figure_id!r} editable_artifact.source is required")
+    else:
+        source_path = root / source
+        if not inside(root, source_path) or not source_path.is_file():
+            errors.append(f"figure {figure_id!r} editable source missing or unsafe: {source}")
+        elif fmt in EDITABLE_FIGURE_FORMATS and source_path.suffix.lower() != f".{fmt}":
+            errors.append(
+                f"figure {figure_id!r} editable source suffix does not match format {fmt!r}"
+            )
+
+    objects = artifact.get("objects")
+    if not isinstance(objects, list) or not objects:
+        errors.append(f"figure {figure_id!r} editable_artifact.objects must be a non-empty list")
+        return
+    object_ids: list[str] = []
+    for obj in objects:
+        if not isinstance(obj, dict):
+            errors.append(f"figure {figure_id!r} has a non-object semantic object entry")
+            continue
+        object_id = obj.get("object_id")
+        kind = obj.get("kind")
+        if not isinstance(object_id, str) or not object_id.strip():
+            errors.append(f"figure {figure_id!r} has a semantic object without object_id")
+            continue
+        object_ids.append(object_id)
+        if kind not in SEMANTIC_OBJECT_KINDS:
+            errors.append(
+                f"figure {figure_id!r} object {object_id!r} has invalid kind {kind!r}"
+            )
+    duplicates = sorted({item for item in object_ids if object_ids.count(item) > 1})
+    if duplicates:
+        errors.append(
+            f"figure {figure_id!r} has duplicate semantic object IDs: {', '.join(duplicates)}"
+        )
+    known_ids = set(object_ids)
+    for obj in objects:
+        if not isinstance(obj, dict) or obj.get("kind") != "connector":
+            continue
+        object_id = obj.get("object_id")
+        for endpoint in ("source_id", "target_id"):
+            target = obj.get(endpoint)
+            if target not in known_ids:
+                errors.append(
+                    f"figure {figure_id!r} connector {object_id!r} has unknown "
+                    f"{endpoint} {target!r}"
+                )
+
+    ledger = artifact.get("content_ledger")
+    if ledger is None:
+        warnings.append(
+            f"figure {figure_id!r} editable_artifact lacks content_ledger; "
+            "diagram simplification cannot be checked for silent object loss"
+        )
+        return
+    if not isinstance(ledger, dict):
+        errors.append(f"figure {figure_id!r} content_ledger must be an object")
+        return
+
+    source_ids = ledger.get("source_object_ids")
+    entries = ledger.get("entries")
+    if (not isinstance(source_ids, list) or not source_ids
+            or any(not isinstance(item, str) or not item.strip() for item in source_ids)):
+        errors.append(
+            f"figure {figure_id!r} content_ledger.source_object_ids must be a non-empty "
+            "list of strings"
+        )
+        return
+    duplicate_sources = sorted({item for item in source_ids if source_ids.count(item) > 1})
+    if duplicate_sources:
+        errors.append(
+            f"figure {figure_id!r} content_ledger has duplicate source object IDs: "
+            f"{', '.join(duplicate_sources)}"
+        )
+    if not isinstance(entries, list):
+        errors.append(f"figure {figure_id!r} content_ledger.entries must be a list")
+        return
+
+    accounted: list[str] = []
+    source_set = set(source_ids)
+    for entry in entries:
+        if not isinstance(entry, dict):
+            errors.append(f"figure {figure_id!r} has a non-object content disposition")
+            continue
+        source_id = entry.get("source_id")
+        action = entry.get("action")
+        if not isinstance(source_id, str) or not source_id.strip():
+            errors.append(f"figure {figure_id!r} content disposition lacks source_id")
+            continue
+        accounted.append(source_id)
+        if source_id not in source_set:
+            errors.append(
+                f"figure {figure_id!r} content disposition references unknown source_id "
+                f"{source_id!r}"
+            )
+        if action not in CONTENT_DISPOSITIONS:
+            errors.append(
+                f"figure {figure_id!r} source object {source_id!r} has invalid action "
+                f"{action!r}"
+            )
+            continue
+        if action in {"retained", "merged"}:
+            target_id = entry.get("target_id")
+            if target_id not in known_ids:
+                errors.append(
+                    f"figure {figure_id!r} source object {source_id!r} has unknown "
+                    f"target_id {target_id!r}"
+                )
+            if action == "merged" and not str(entry.get("reason") or "").strip():
+                errors.append(
+                    f"figure {figure_id!r} merged source object {source_id!r} needs a reason"
+                )
+        else:
+            if not str(entry.get("reason") or "").strip():
+                errors.append(
+                    f"figure {figure_id!r} omitted source object {source_id!r} needs a reason"
+                )
+            evidence_bearing = entry.get("evidence_bearing")
+            if not isinstance(evidence_bearing, bool):
+                errors.append(
+                    f"figure {figure_id!r} omitted source object {source_id!r} must declare "
+                    "boolean evidence_bearing"
+                )
+            elif evidence_bearing and entry.get("author_approved") is not True:
+                errors.append(
+                    f"figure {figure_id!r} evidence-bearing omission {source_id!r} needs "
+                    "author_approved=true"
+                )
+
+    duplicate_entries = sorted({item for item in accounted if accounted.count(item) > 1})
+    if duplicate_entries:
+        errors.append(
+            f"figure {figure_id!r} content_ledger has duplicate dispositions for: "
+            f"{', '.join(duplicate_entries)}"
+        )
+    missing = sorted(source_set - set(accounted))
+    if missing:
+        errors.append(
+            f"figure {figure_id!r} content_ledger leaves source objects unaccounted: "
+            f"{', '.join(missing)}"
+        )
 
 
 def log_event(root: Path, event: str, **fields: object) -> None:
@@ -138,7 +423,16 @@ def template_payloads() -> dict[str, object]:
             "schema_version": "2.0", "complete": False, "selected_journal": "", "candidates": []
         },
         "05-editorial/reviewer-panel.json": {
-            "schema_version": "2.0", "complete": False, "reviewers": [], "verdict": "INCOMPLETE"
+            "schema_version": "2.2", "complete": False, "reviewers": [],
+            "review_coverage": [{
+                "input_id": input_id,
+                "status": "MISSING",
+                "evidence_locator": "",
+                "reason": "review has not yet examined this input",
+            } for input_id in REQUIRED_REVIEW_INPUTS],
+            "comments": [],
+            "responses": [],
+            "verdict": "INCOMPLETE",
         },
         "05-editorial/submission-preflight.json": {
             "schema_version": "2.0", "complete": False, "status": "BLOCKED", "blockers": []
@@ -354,12 +648,42 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
     if not items:
         errors.append("claim map contains no claims")
     for item in items:
+        claim_id = item.get("claim_id")
         if not item.get("claim_id") or not item.get("text") or not item.get("evidence_ids"):
             errors.append("every claim needs claim_id, text and evidence_ids")
         if item.get("risk") == "high" and item.get("status") != "SUPPORTED":
-            errors.append(f"high-risk claim {item.get('claim_id')!r} is not SUPPORTED")
+            errors.append(f"high-risk claim {claim_id!r} is not SUPPORTED")
         elif item.get("status") in {"UNSUPPORTED", "CONTRADICTED", "PENDING", None}:
-            errors.append(f"claim {item.get('claim_id')!r} has blocking status {item.get('status')!r}")
+            errors.append(f"claim {claim_id!r} has blocking status {item.get('status')!r}")
+
+        verification = item.get("verification")
+        if not isinstance(verification, dict):
+            errors.append(
+                f"claim {claim_id!r} verification needs required_depth, reached_depth, "
+                "checked_at and evidence_locator"
+            )
+            continue
+        required = verification.get("required_depth")
+        reached = verification.get("reached_depth")
+        if required not in VERIFICATION_RANK:
+            errors.append(f"claim {claim_id!r} has invalid verification required_depth {required!r}")
+        elif VERIFICATION_RANK[required] < VERIFICATION_RANK[MIN_GATE_G_VERIFICATION]:
+            errors.append(
+                f"claim {claim_id!r} verification required_depth {required!r} is below "
+                f"Gate G minimum {MIN_GATE_G_VERIFICATION!r}"
+            )
+        if reached not in VERIFICATION_RANK:
+            errors.append(f"claim {claim_id!r} has invalid verification reached_depth {reached!r}")
+        if (required in VERIFICATION_RANK and reached in VERIFICATION_RANK
+                and VERIFICATION_RANK[reached] < VERIFICATION_RANK[required]):
+            errors.append(
+                f"claim {claim_id!r} verification reached_depth {reached!r} is below "
+                f"required_depth {required!r}"
+            )
+        if not verification.get("checked_at") or not verification.get("evidence_locator"):
+            errors.append(
+                f"claim {claim_id!r} verification needs checked_at and evidence_locator"
+            )
 
     figures = load_required(root, "04-manuscript/figure-manifest.json", errors)
     if figures.get("complete") is not True:
@@ -370,9 +694,66 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
     for fig in figure_items:
         if not fig.get("figure_id") or not fig.get("claim_ids") or not fig.get("source_data"):
             errors.append("each figure needs figure_id, claim_ids and source_data")
+        check_editable_artifact(root, fig, errors, warnings)
         review = fig.get("visual_review") or {}
+        if not isinstance(review, dict):
+            errors.append(f"figure {fig.get('figure_id')!r} visual_review must be an object")
+            review = {}
         if not review.get("reviewer") or not review.get("reviewed_at"):
             errors.append(f"figure {fig.get('figure_id')!r} lacks signed visual_review")
+        target_width = fig.get("target_width_mm")
+        reviewed_width = review.get("reviewed_width_mm")
+        if not is_positive_number(target_width):
+            errors.append(
+                f"figure {fig.get('figure_id')!r} needs a positive target_width_mm"
+            )
+        if not is_positive_number(reviewed_width):
+            errors.append(
+                f"figure {fig.get('figure_id')!r} visual_review needs a positive "
+                "reviewed_width_mm"
+            )
+        elif (is_positive_number(target_width)
+              and abs(float(reviewed_width) - float(target_width)) > FINAL_SIZE_TOLERANCE_MM):
+            errors.append(
+                f"figure {fig.get('figure_id')!r} reviewed_width_mm={reviewed_width} does not "
+                f"match target_width_mm={target_width} within {FINAL_SIZE_TOLERANCE_MM} mm"
+            )
+        outputs = fig.get("outputs") or []
+        if not isinstance(outputs, list) or not outputs:
+            errors.append(f"figure {fig.get('figure_id')!r} needs current output files")
+            outputs = []
+        output_hashes = review.get("output_sha256")
+        if not isinstance(output_hashes, dict):
+            errors.append(
+                f"figure {fig.get('figure_id')!r} visual_review needs output_sha256 bindings"
+            )
+            output_hashes = {}
+        declared_outputs: set[str] = set()
+        for rel in outputs:
+            if not isinstance(rel, str) or not rel.strip():
+                errors.append(f"figure {fig.get('figure_id')!r} has an invalid output path")
+                continue
+            declared_outputs.add(rel)
+            path = root / rel
+            if not inside(root, path) or not path.is_file():
+                errors.append(f"figure {fig.get('figure_id')!r} output missing or unsafe: {rel}")
+                continue
+            expected = output_hashes.get(rel)
+            if not is_sha256(expected):
+                errors.append(
+                    f"figure {fig.get('figure_id')!r} output {rel!r} lacks a lowercase SHA-256 "
+                    "from the visual review"
+                )
+            elif expected != sha256(path):
+                errors.append(
+                    f"figure {fig.get('figure_id')!r} output {rel!r} changed after visual review"
+                )
+        extras = sorted(str(key) for key in output_hashes if key not in declared_outputs)
+        if extras:
+            warnings.append(
+                f"figure {fig.get('figure_id')!r} visual_review has hashes for undeclared outputs: "
+                + ", ".join(extras)
+            )
 
     citations = load_required(root, "04-manuscript/citation-audit.json", errors)
     if citations.get("complete") is not True:
@@ -386,6 +767,7 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
         cid = cite.get("citation_id")
         if cite.get("identity_status") != "VERIFIED":
             errors.append(f"citation {cid!r} identity is not VERIFIED")
+        check_publication_integrity(cite, cid, errors)
         support = cite.get("support_status")
         if support in {"CONTRADICTS", "DOES_NOT_SUPPORT"}:
             errors.append(f"citation {cid!r} has blocking support status {support}")
@@ -407,6 +789,140 @@ def gate_g(root: Path) -> tuple[list[str], list[str]]:
     if not any((root / "04-manuscript" / name).is_file() for name in MANUSCRIPT_NAMES):
         errors.append("missing manuscript.md, manuscript.tex or manuscript.docx")
     return errors, warnings
+
+
+def check_review_coverage(panel: dict, errors: list[str]) -> None:
+    coverage = panel.get("review_coverage")
+    if not isinstance(coverage, list):
+        errors.append("review coverage must be a list accounting for every required input")
+        return
+
+    indexed: dict[str, dict] = {}
+    for index, entry in enumerate(coverage):
+        if not isinstance(entry, dict):
+            errors.append(f"review coverage entry {index} must be an object")
+            continue
+        input_id = entry.get("input_id")
+        if input_id not in REQUIRED_REVIEW_INPUTS:
+            errors.append(f"review coverage has unknown input_id {input_id!r}")
+            continue
+        if input_id in indexed:
+            errors.append(f"review coverage has duplicate input_id {input_id!r}")
+            continue
+        indexed[input_id] = entry
+
+    for input_id in REQUIRED_REVIEW_INPUTS:
+        entry = indexed.get(input_id)
+        if entry is None:
+            errors.append(f"review coverage is missing required input {input_id!r}")
+            continue
+        status = entry.get("status")
+        if status not in REVIEW_COVERAGE_STATUSES:
+            errors.append(f"review coverage {input_id!r} has invalid status {status!r}")
+            continue
+        locator = entry.get("evidence_locator")
+        reason = entry.get("reason")
+        if status == "REVIEWED":
+            if not isinstance(locator, str) or not locator.strip():
+                errors.append(
+                    f"review coverage {input_id!r} is REVIEWED but has no evidence_locator"
+                )
+        else:
+            if not isinstance(reason, str) or not reason.strip():
+                errors.append(
+                    f"review coverage {input_id!r} is {status} but has no reason"
+                )
+            errors.append(
+                f"review coverage {input_id!r} is {status}; reviewer panel cannot be {READY}"
+            )
+
+
+def check_response_coverage(panel: dict, errors: list[str]) -> None:
+    """Require one auditable disposition for every substantive reviewer comment.
+
+    This is an exact-ID coverage check, not a judgement of whether the response is
+    persuasive or the cited manuscript change is scientifically adequate.
+    """
+    comments = panel.get("comments")
+    if not isinstance(comments, list):
+        errors.append("response coverage needs a reviewer comments list")
+        return
+    if not 3 <= len(comments) <= 5:
+        errors.append("response coverage needs 3-5 substantive reviewer comments")
+
+    indexed_comments: dict[str, dict] = {}
+    actionable: set[str] = set()
+    for index, comment in enumerate(comments):
+        if not isinstance(comment, dict):
+            errors.append(f"review comment {index} must be an object")
+            continue
+        comment_id = comment.get("id")
+        if not isinstance(comment_id, str) or not comment_id.strip():
+            errors.append(f"review comment {index} needs a non-empty id")
+            continue
+        if comment_id in indexed_comments:
+            errors.append(f"review comments have duplicate id {comment_id!r}")
+            continue
+        indexed_comments[comment_id] = comment
+        severity = comment.get("severity")
+        if severity not in REVIEW_COMMENT_SEVERITIES:
+            errors.append(f"review comment {comment_id!r} has invalid severity {severity!r}")
+        if not isinstance(comment.get("location"), str) or not comment["location"].strip():
+            errors.append(f"review comment {comment_id!r} needs a location")
+        if not isinstance(comment.get("objection"), str) or not comment["objection"].strip():
+            errors.append(f"review comment {comment_id!r} needs an objection")
+        actionable.add(comment_id)
+
+    responses = panel.get("responses")
+    if not isinstance(responses, list):
+        errors.append("response coverage must be a list keyed by reviewer comment id")
+        return
+
+    indexed_responses: dict[str, dict] = {}
+    for index, response in enumerate(responses):
+        if not isinstance(response, dict):
+            errors.append(f"review response {index} must be an object")
+            continue
+        comment_id = response.get("comment_id")
+        if comment_id not in indexed_comments:
+            errors.append(f"response coverage has unknown comment_id {comment_id!r}")
+            continue
+        if comment_id in indexed_responses:
+            errors.append(f"response coverage has duplicate comment_id {comment_id!r}")
+            continue
+        indexed_responses[comment_id] = response
+
+        disposition = response.get("disposition")
+        if disposition not in RESPONSE_DISPOSITIONS:
+            errors.append(
+                f"response coverage {comment_id!r} has invalid disposition {disposition!r}"
+            )
+        if not isinstance(response.get("response"), str) or not response["response"].strip():
+            errors.append(f"response coverage {comment_id!r} needs response text")
+        if disposition == "REVISED":
+            if (not isinstance(response.get("change_locator"), str)
+                    or not response["change_locator"].strip()):
+                errors.append(f"response coverage {comment_id!r} REVISED needs change_locator")
+        elif disposition == "EVIDENCE_BASED_REBUTTAL":
+            if (not isinstance(response.get("evidence_locator"), str)
+                    or not response["evidence_locator"].strip()):
+                errors.append(
+                    f"response coverage {comment_id!r} EVIDENCE_BASED_REBUTTAL needs "
+                    "evidence_locator"
+                )
+        elif disposition == "AUTHOR_ACCEPTED_LIMITATION":
+            if not isinstance(response.get("reason"), str) or not response["reason"].strip():
+                errors.append(
+                    f"response coverage {comment_id!r} AUTHOR_ACCEPTED_LIMITATION needs reason"
+                )
+            if response.get("author_approved") is not True:
+                errors.append(
+                    f"response coverage {comment_id!r} AUTHOR_ACCEPTED_LIMITATION needs "
+                    "author_approved=true"
+                )
+
+    for comment_id in sorted(actionable - set(indexed_responses)):
+        errors.append(f"response coverage is missing reviewer comment {comment_id!r}")
 
 
 def gate_e(root: Path) -> tuple[list[str], list[str]]:
@@ -432,6 +948,8 @@ def gate_e(root: Path) -> tuple[list[str], list[str]]:
     roles = [x.get("role") for x in reviewers]
     if len(set(roles)) != len(roles) or any(not x for x in roles):
         errors.append("reviewer roles must be non-empty and distinct")
+    check_review_coverage(panel, errors)
+    check_response_coverage(panel, errors)
     verdict = panel.get("verdict")
     if verdict != READY:
         errors.append(f"reviewer panel verdict is not {READY}: {verdict!r}")
